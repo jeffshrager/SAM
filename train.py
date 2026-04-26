@@ -20,7 +20,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from data_gen import (
     ALL_OPS, VOCAB_SIZE, _C2I, _I2C,
-    make_dataset, load_dataset, encode,
+    make_dataset, save_dataset, load_dataset, encode,
 )
 
 # ── Logger ───────────────────────────────────────────────────────────────────
@@ -227,6 +227,8 @@ def evaluate(model, loader, device) -> float:
 # ── Training ──────────────────────────────────────────────────────────────────
 
 def train(args):
+    torch.manual_seed(args.seed)
+
     # MPS (torch 1.13) is unreliable for this workload; prefer CUDA then CPU.
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -240,21 +242,25 @@ def train(args):
 
     # ── Data ──
     if args.data_dir:
-        data, _ = load_dataset(args.data_dir)
+        data, gen_cfg = load_dataset(args.data_dir)
         log(f"Data   : loaded from {args.data_dir}")
     else:
         gen_cfg = dict(
             n_train=args.n_train, n_test=args.n_test,
             max_depth_train=args.max_depth_train,
             max_depth_test=args.max_depth_test,
-            allowed_ops=tuple(ALL_OPS),
+            allowed_ops=list(ALL_OPS),
             require_neg=True, seed=args.seed,
         )
         data = make_dataset(**gen_cfg)
-        log(f"Data   : train={len(data['train'])}  "
-            f"test_same={len(data['test_same'])}  "
-            f"test_deeper={len(data['test_deeper'])}  "
-            f"depth_train={args.max_depth_train}  depth_test={args.max_depth_test}")
+        data_dir = save_dataset(data, gen_cfg, base_dir='data')
+        log(f"Data   : generated and saved to {data_dir}")
+    log(f"Data   : train={len(data['train'])}  "
+        f"test_same={len(data['test_same'])}  "
+        f"test_deeper={len(data['test_deeper'])}  "
+        f"depth_train={gen_cfg['max_depth_train']}  "
+        f"depth_test={gen_cfg['max_depth_test']}  "
+        f"seed={gen_cfg['seed']}")
 
     max_len = args.max_len
     train_ds = AlgebraDataset(data['train'],       max_len)
