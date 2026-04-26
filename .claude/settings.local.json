@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python3 *)",
-      "Bash(/usr/local/bin/python3.10 *)"
+      "Bash(/usr/local/bin/python3.10 *)",
+      "Bash(awk '{print \"Running, CPU time:\", $10}')"
     ]
   }
 }

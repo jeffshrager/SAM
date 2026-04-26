@@ -10,6 +10,7 @@ Usage:
 import argparse
 import math
 import time
+from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -21,6 +22,23 @@ from data_gen import (
     ALL_OPS, VOCAB_SIZE, _C2I, _I2C,
     make_dataset, load_dataset, encode,
 )
+
+# ── Logger ───────────────────────────────────────────────────────────────────
+
+class Logger:
+    """Writes to stdout and a file simultaneously."""
+    def __init__(self, path: Path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._f = open(path, 'w')
+
+    def __call__(self, msg: str = ''):
+        print(msg, flush=True)
+        self._f.write(msg + '\n')
+        self._f.flush()
+
+    def close(self):
+        self._f.close()
+
 
 # ── Vocabulary extension ──────────────────────────────────────────────────────
 PAD_ID   = VOCAB_SIZE        # one extra token used for padding
@@ -173,12 +191,12 @@ class NanoGPT(nn.Module):
 # ── Greedy generation ─────────────────────────────────────────────────────────
 
 @torch.no_grad()
-def greedy_decode(model, prompt_ids: list[int], device) -> list[int]:
-    """Extend prompt greedily until PAD or max_len is reached."""
+def greedy_decode(model, prompt_ids: list[int], device, max_new: int = 64) -> list[int]:
+    """Extend prompt greedily for at most max_new tokens."""
     model.eval()
     ids = list(prompt_ids)
-    max_len = model.cfg.max_len
-    while len(ids) < max_len:
+    limit = min(len(ids) + max_new, model.cfg.max_len)
+    while len(ids) < limit:
         x      = torch.tensor([ids], device=device)
         logits, _ = model(x)
         nxt    = logits[0, -1].argmax().item()
@@ -209,17 +227,21 @@ def evaluate(model, loader, device) -> float:
 # ── Training ──────────────────────────────────────────────────────────────────
 
 def train(args):
-    device = (
-        'cuda'  if torch.cuda.is_available()  else
-        'mps'   if torch.backends.mps.is_available() else
-        'cpu'
-    )
-    print(f"Device : {device}")
+    # MPS (torch 1.13) is unreliable for this workload; prefer CUDA then CPU.
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    ts  = datetime.now().strftime('%Y%m%d_%H%M%S')
+    tag = f"{args.n_layer}L{args.n_head}H_d{args.d_model}"
+    log_path = Path(args.exp_dir) / f"{ts}_{tag}.txt"
+    log = Logger(log_path)
+
+    log(f"Run    : {ts}  {tag}")
+    log(f"Device : {device}")
 
     # ── Data ──
     if args.data_dir:
         data, _ = load_dataset(args.data_dir)
-        print(f"Loaded dataset from {args.data_dir}")
+        log(f"Data   : loaded from {args.data_dir}")
     else:
         gen_cfg = dict(
             n_train=args.n_train, n_test=args.n_test,
@@ -229,10 +251,10 @@ def train(args):
             require_neg=True, seed=args.seed,
         )
         data = make_dataset(**gen_cfg)
-        print(f"Generated dataset: "
-              f"train={len(data['train'])}  "
-              f"test_same={len(data['test_same'])}  "
-              f"test_deeper={len(data['test_deeper'])}")
+        log(f"Data   : train={len(data['train'])}  "
+            f"test_same={len(data['test_same'])}  "
+            f"test_deeper={len(data['test_deeper'])}  "
+            f"depth_train={args.max_depth_train}  depth_test={args.max_depth_test}")
 
     max_len = args.max_len
     train_ds = AlgebraDataset(data['train'],       max_len)
@@ -253,7 +275,8 @@ def train(args):
     )
     model = NanoGPT(cfg).to(device)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"Params : {n_params:,}  ({cfg.n_layer}L {cfg.n_head}H d{cfg.d_model})")
+    log(f"Params : {n_params:,}  ({cfg.n_layer}L {cfg.n_head}H d{cfg.d_model}  "
+        f"max_len={max_len}  bs={args.batch_size}  iters={args.max_iters}  lr={args.lr})")
 
     # ── Optimiser + schedule ──
     optimizer = torch.optim.AdamW(
@@ -269,6 +292,7 @@ def train(args):
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
     # ── Loop ──
+    log('')
     model.train()
     train_iter = iter(train_loader)
     t0 = time.time()
@@ -292,35 +316,39 @@ def train(args):
 
         if step % args.log_every == 0:
             lr_now = scheduler.get_last_lr()[0]
-            print(f"step {step:5d}  loss {loss.item():.4f}  "
-                  f"lr {lr_now:.2e}  {time.time()-t0:.0f}s")
+            log(f"step {step:5d}  loss {loss.item():.4f}  "
+                f"lr {lr_now:.2e}  {time.time()-t0:.0f}s")
 
         if step > 0 and step % args.eval_every == 0:
             acc_s = evaluate(model, same_loader, device)
             acc_d = evaluate(model, deep_loader, device)
-            print(f"         >> test_same={acc_s:.3f}  test_deeper={acc_d:.3f}")
+            log(f"         >> test_same={acc_s:.3f}  test_deeper={acc_d:.3f}")
             model.train()
 
     # ── Final eval + samples ──
     acc_s = evaluate(model, same_loader, device)
     acc_d = evaluate(model, deep_loader, device)
-    print(f"\nFinal  test_same={acc_s:.3f}  test_deeper={acc_d:.3f}")
+    log(f"\nFinal  test_same={acc_s:.3f}  test_deeper={acc_d:.3f}")
 
-    print("\nSample predictions (greedy):")
+    log("\nSample predictions (greedy):")
     for raw in data['test_same'][:8]:
         src, tgt = raw.split('->')
         prompt   = encode(src + '->')
-        out_ids  = greedy_decode(model, prompt, device)
+        out_ids  = greedy_decode(model, prompt, device, max_new=len(tgt) * 2 + 4)
         out_str  = ''.join(_I2C.get(i, '?') for i in out_ids[len(prompt):])
-        mark     = '✓' if out_str == tgt else '✗'
-        print(f"  {mark}  {src}->  pred={out_str!r}  gold={tgt!r}")
+        mark     = 'OK' if out_str == tgt else 'XX'
+        log(f"  {mark}  {src}->  pred={out_str!r}  gold={tgt!r}")
+
+    log(f"\nLog    : {log_path}")
 
     # ── Save ──
     if args.save:
         save_path = Path(args.save)
         torch.save({'model': model.state_dict(), 'cfg': cfg, 'args': vars(args)},
                    save_path)
-        print(f"\nModel saved to {save_path}")
+        log(f"Model  : {save_path}")
+
+    log.close()
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -335,7 +363,7 @@ def parse_args():
     p.add_argument('--max_depth_test',  type=int,   default=4)
     p.add_argument('--seed',            type=int,   default=42)
     # model
-    p.add_argument('--max_len',         type=int,   default=256)
+    p.add_argument('--max_len',         type=int,   default=96)
     p.add_argument('--n_layer',         type=int,   default=2)
     p.add_argument('--n_head',          type=int,   default=4)
     p.add_argument('--d_model',         type=int,   default=128)
@@ -348,6 +376,7 @@ def parse_args():
     p.add_argument('--log_every',       type=int,   default=200)
     p.add_argument('--eval_every',      type=int,   default=1_000)
     p.add_argument('--save',            default=None, help='path to save model (.pt)')
+    p.add_argument('--exp_dir',         default='experiments', help='directory for run logs')
     return p.parse_args()
 
 

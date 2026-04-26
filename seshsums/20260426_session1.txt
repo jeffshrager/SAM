@@ -45,10 +45,31 @@ Project: nanoalgebra
     - Sanity-checked: 430K params, forward pass OK, eval loop OK, greedy_decode OK
     - Python to use: /usr/local/bin/python3.10 (has torch 1.13.1)
 
+--- First training run results (2L 4H d128, 5000 steps, ~16 min CPU) ---
+
+  test_same  (depth-2, in-distribution):  1.000  (100% exact match)
+  test_deeper (depth-4, OOD):             0.173  (17.3% exact match)
+
+  Convergence: loss hit ~0.02 by step 400, plateaued near 0.0006 by step 2000.
+  test_same reached 1.000 at step 1000 and stayed there.
+  test_deeper stalled at ~17% throughout — the key generalization gap.
+
+  Notes:
+  - max_len reduced from 256 to 96 (actual data max is 84 for depth-4);
+    gave ~8x speedup in attention (O(T^2)).
+  - Greedy decode display is cosmetically broken (no EOS token; model
+    keeps generating past the answer). Accuracy metric is unaffected.
+    Fix: add EOS token (future work) or cap generation in visualization.
+  - Save crashed (missing models/ dir); re-run in progress.
+  - Python to use: /usr/local/bin/python3.10 (torch 1.13.1, no MPS).
+
 --- Next steps ---
 
-  Run first training: python3.10 train.py
-  Then: probes, curriculum experiments, misconception induction
+  1. Fix greedy decode (EOS token or length cap in display)
+  2. Curriculum experiment: train on depth-1 → depth-2 → depth-4 progressively;
+     does it improve test_deeper generalization beyond 17%?
+  3. Probes: attention pattern visualization, activation patching
+  4. Misconception induction: biased training data
 
 --- Key project context (from spec discussions) ---
 
