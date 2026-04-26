@@ -240,36 +240,61 @@ def train(args):
     log(f"Run    : {ts}  {tag}")
     log(f"Device : {device}")
 
-    # ── Data ──
-    if args.data_dir:
-        data, gen_cfg = load_dataset(args.data_dir)
-        log(f"Data   : loaded from {args.data_dir}")
-    else:
-        gen_cfg = dict(
+    # ── Data helpers ──
+    max_len = args.max_len
+
+    def _make_loaders(depth, label=''):
+        """Generate + save a dataset at max_depth_train=depth; return (train, same, data)."""
+        cfg = dict(
             n_train=args.n_train, n_test=args.n_test,
-            max_depth_train=args.max_depth_train,
+            max_depth_train=depth,
             max_depth_test=args.max_depth_test,
             allowed_ops=list(ALL_OPS),
             require_neg=True, seed=args.seed,
         )
-        data = make_dataset(**gen_cfg)
-        data_dir = save_dataset(data, gen_cfg, base_dir='data')
-        log(f"Data   : generated and saved to {data_dir}")
-    log(f"Data   : train={len(data['train'])}  "
-        f"test_same={len(data['test_same'])}  "
-        f"test_deeper={len(data['test_deeper'])}  "
-        f"depth_train={gen_cfg['max_depth_train']}  "
-        f"depth_test={gen_cfg['max_depth_test']}  "
-        f"seed={gen_cfg['seed']}")
+        d = make_dataset(**cfg)
+        saved = save_dataset(d, cfg, base_dir='data')
+        log(f"Data{label}: depth_train={depth}  train={len(d['train'])}  "
+            f"test_same={len(d['test_same'])}  saved={saved}")
+        tr = DataLoader(AlgebraDataset(d['train'],     max_len),
+                        batch_size=args.batch_size, shuffle=True, drop_last=True)
+        sm = DataLoader(AlgebraDataset(d['test_same'], max_len),
+                        batch_size=args.batch_size, shuffle=False)
+        return tr, sm, d
 
-    max_len = args.max_len
-    train_ds = AlgebraDataset(data['train'],       max_len)
-    same_ds  = AlgebraDataset(data['test_same'],   max_len)
-    deep_ds  = AlgebraDataset(data['test_deeper'], max_len)
+    # ── Data ──
+    if args.curriculum:
+        stages = [int(d) for d in args.stages.split(',')]
+        log(f"Curriculum stages: {stages}  threshold={args.stage_threshold}")
 
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,  drop_last=True)
-    same_loader  = DataLoader(same_ds,  batch_size=args.batch_size, shuffle=False)
-    deep_loader  = DataLoader(deep_ds,  batch_size=args.batch_size, shuffle=False)
+        # Fixed test_deeper: generate once from the deepest stage's distribution.
+        deep_cfg = dict(n_train=10, n_test=args.n_test,
+                        max_depth_train=stages[-1], max_depth_test=args.max_depth_test,
+                        allowed_ops=list(ALL_OPS), require_neg=True, seed=args.seed + 1)
+        deep_data   = make_dataset(**deep_cfg)
+        deep_loader = DataLoader(AlgebraDataset(deep_data['test_deeper'], max_len),
+                                 batch_size=args.batch_size, shuffle=False)
+        log(f"Data   : fixed test_deeper={len(deep_data['test_deeper'])}  "
+            f"depth_test={args.max_depth_test}")
+
+        stage_idx    = 0
+        train_loader, same_loader, data = _make_loaders(stages[0], label=f'[stage 1/{len(stages)}]')
+
+    elif args.data_dir:
+        data, gen_cfg = load_dataset(args.data_dir)
+        log(f"Data   : loaded from {args.data_dir}  train={len(data['train'])}  "
+            f"test_same={len(data['test_same'])}  test_deeper={len(data['test_deeper'])}")
+        train_loader = DataLoader(AlgebraDataset(data['train'],     max_len),
+                                  batch_size=args.batch_size, shuffle=True, drop_last=True)
+        same_loader  = DataLoader(AlgebraDataset(data['test_same'], max_len),
+                                  batch_size=args.batch_size, shuffle=False)
+        deep_loader  = DataLoader(AlgebraDataset(data['test_deeper'], max_len),
+                                  batch_size=args.batch_size, shuffle=False)
+
+    else:
+        train_loader, same_loader, data = _make_loaders(args.max_depth_train)
+        deep_loader = DataLoader(AlgebraDataset(data['test_deeper'], max_len),
+                                 batch_size=args.batch_size, shuffle=False)
 
     # ── Model ──
     cfg   = GPTConfig(
@@ -298,13 +323,17 @@ def train(args):
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
     # ── Loop ──
+    if args.curriculum:
+        log(f"\n=== Stage 1/{len(stages)}: max_depth={stages[0]} ===")
     log('')
     model.train()
-    train_iter = iter(train_loader)
-    t0 = time.time()
+    train_iter     = iter(train_loader)
+    t0             = time.time()
+    deeper_history = []
+    same_history   = []   # per-stage test_same history (curriculum only)
+    stopped_early  = False
 
     for step in range(args.max_iters + 1):
-        # fetch next batch, cycling through epochs
         try:
             x, y, mask = next(train_iter)
         except StopIteration:
@@ -331,10 +360,47 @@ def train(args):
             log(f"         >> test_same={acc_s:.3f}  test_deeper={acc_d:.3f}")
             model.train()
 
+            deeper_history.append(acc_d)
+            same_history.append(acc_s)
+
+            if args.curriculum:
+                # Advance stage if test_same hit threshold, or test_same has stalled.
+                same_hit  = acc_s >= args.stage_threshold
+                same_stalled = (args.patience > 0
+                                and len(same_history) >= args.patience
+                                and max(same_history[-args.patience:]) <=
+                                    (max(same_history[:-args.patience]) if len(same_history) > args.patience else -1.0)
+                                    + args.min_delta)
+                if same_hit or same_stalled:
+                    reason = "threshold reached" if same_hit else "stalled"
+                    stage_idx += 1
+                    if stage_idx < len(stages):
+                        log(f"\n=== Stage {stage_idx+1}/{len(stages)}: "
+                            f"max_depth={stages[stage_idx]}  ({reason} at step {step}) ===")
+                        train_loader, same_loader, data = _make_loaders(
+                            stages[stage_idx], label=f'[stage {stage_idx+1}/{len(stages)}]')
+                        train_iter   = iter(train_loader)
+                        same_history = []
+                        deeper_history = []
+                    else:
+                        log(f"\n=== All stages complete ({reason} at step {step}) ===")
+                        break
+            else:
+                # Standard early stopping on test_deeper.
+                if args.patience > 0 and len(deeper_history) >= args.patience:
+                    window_best = max(deeper_history[-args.patience:])
+                    prior_best  = max(deeper_history[:-args.patience]) if len(deeper_history) > args.patience else -1.0
+                    if window_best <= prior_best + args.min_delta:
+                        log(f"  [early stop] test_deeper no improvement > {args.min_delta} "
+                            f"in last {args.patience} evals — stopping at step {step}")
+                        stopped_early = True
+                        break
+
     # ── Final eval + samples ──
-    acc_s = evaluate(model, same_loader, device)
-    acc_d = evaluate(model, deep_loader, device)
-    log(f"\nFinal  test_same={acc_s:.3f}  test_deeper={acc_d:.3f}")
+    acc_s  = evaluate(model, same_loader, device)
+    acc_d  = evaluate(model, deep_loader, device)
+    status = "early-stop" if stopped_early else "full-run"
+    log(f"\nFinal  test_same={acc_s:.3f}  test_deeper={acc_d:.3f}  ({status})")
 
     log("\nSample predictions (greedy):")
     for raw in data['test_same'][:8]:
@@ -380,9 +446,20 @@ def parse_args():
     p.add_argument('--lr',              type=float, default=3e-4)
     p.add_argument('--warmup_iters',    type=int,   default=200)
     p.add_argument('--log_every',       type=int,   default=200)
-    p.add_argument('--eval_every',      type=int,   default=1_000)
+    p.add_argument('--eval_every',      type=int,   default=200)
     p.add_argument('--save',            default=None, help='path to save model (.pt)')
     p.add_argument('--exp_dir',         default='experiments', help='directory for run logs')
+    p.add_argument('--patience',        type=int,   default=3,
+                   help='early-stop window in evals (0 = disabled)')
+    p.add_argument('--min_delta',       type=float, default=0.01,
+                   help='min improvement required within patience window')
+    # curriculum
+    p.add_argument('--curriculum',      action='store_true',
+                   help='progressive training through depth stages')
+    p.add_argument('--stages',          default='1,2,3,4',
+                   help='comma-separated max_depth_train values for each stage')
+    p.add_argument('--stage_threshold', type=float, default=0.99,
+                   help='test_same accuracy needed to advance to next stage')
     return p.parse_args()
 
 

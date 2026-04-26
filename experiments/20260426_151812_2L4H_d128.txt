@@ -5,3 +5,27 @@ Data   : train=10000  test_same=1000  test_deeper=1000  depth_train=2  depth_tes
 Params : 410,112  (2L 4H d128  max_len=96  bs=64  iters=5000  lr=0.0003)
 
 step     0  loss 2.8664  lr 1.50e-06  0s
+step   200  loss 0.2803  lr 3.00e-04  38s
+step   400  loss 0.0195  lr 2.99e-04  73s
+step   600  loss 0.0143  lr 2.95e-04  106s
+step   800  loss 0.0064  lr 2.90e-04  141s
+step  1000  loss 0.0039  lr 2.82e-04  176s
+         >> test_same=1.000  test_deeper=0.174
+step  1200  loss 0.0046  lr 2.72e-04  216s
+step  1400  loss 0.0130  lr 2.60e-04  255s
+step  1600  loss 0.0027  lr 2.47e-04  288s
+step  1800  loss 0.0016  lr 2.32e-04  333s
+step  2000  loss 0.0014  lr 2.17e-04  368s
+         >> test_same=1.000  test_deeper=0.176
+step  2200  loss 0.0096  lr 2.00e-04  412s
+step  2400  loss 0.0013  lr 1.83e-04  449s
+step  2600  loss 0.0012  lr 1.65e-04  485s
+step  2800  loss 0.0011  lr 1.47e-04  535s
+step  3000  loss 0.0013  lr 1.30e-04  577s
+         >> test_same=1.000  test_deeper=0.175
+step  3200  loss 0.0009  lr 1.13e-04  617s
+step  3400  loss 0.0008  lr 9.74e-05  653s
+step  3600  loss 0.0007  lr 8.27e-05  689s
+step  3800  loss 0.0007  lr 6.95e-05  728s
+step  4000  loss 0.0006  lr 5.78e-05  766s
+         >> test_same=1.000  test_deeper=0.173

@@ -1,0 +1,42 @@
+Run    : 20260426_162627  2L4H_d128
+Device : cpu
+Curriculum stages: [1, 2, 3, 4]  threshold=0.99
+Data   : fixed test_deeper=1000  depth_test=4
+Data[stage 1/4]: depth_train=1  train=10000  test_same=1000  saved=data/20260426_162628
+Params : 410,112  (2L 4H d128  max_len=96  bs=64  iters=600  lr=0.0003)
+
+=== Stage 1/4: max_depth=1 ===
+
+step     0  loss 2.9376  lr 1.50e-06  0s
+step   100  loss 0.4074  lr 1.51e-04  19s
+         >> test_same=1.000  test_deeper=0.096
+
+=== Stage 2/4: max_depth=2  (threshold reached at step 100) ===
+Data[stage 2/4]: depth_train=2  train=10000  test_same=1000  saved=data/20260426_162648
+step   200  loss 0.4061  lr 3.00e-04  39s
+         >> test_same=0.708  test_deeper=0.158
+step   300  loss 0.0777  lr 2.60e-04  59s
+         >> test_same=0.962  test_deeper=0.171
+step   400  loss 0.0252  lr 1.64e-04  80s
+         >> test_same=0.996  test_deeper=0.172
+
+=== Stage 3/4: max_depth=3  (threshold reached at step 400) ===
+Data[stage 3/4]: depth_train=3  train=10000  test_same=1000  saved=data/20260426_162750
+step   500  loss 0.9849  lr 6.88e-05  100s
+         >> test_same=0.281  test_deeper=0.185
+step   600  loss 0.9337  lr 3.00e-05  119s
+         >> test_same=0.297  test_deeper=0.187
+
+Final  test_same=0.297  test_deeper=0.187  (full-run)
+
+Sample predictions (greedy):
+  XX  (4--(4+7))->  pred='4+4-7-4-7-4-7-'  gold='4+4+7'
+  XX  (-(4+6)+2)->  pred='-4-6-2-6-2-2-2+6'  gold='-4-6+2'
+  XX  (9--4)->  pred='9+4+9+4-9-'  gold='9+4'
+  XX  -3->  pred='-3+3-3+3'  gold='-3'
+  XX  -((0-8)+(7+4))->  pred='-0-8-0-8-0-8+8+8-0-0'  gold='-0+8-7-4'
+  XX  -(8+(4-7))->  pred='-8-4-7-4+7-7-7-4'  gold='-8-4+7'
+  XX  (((9+2)-(7-1))+-(-9))->  pred='9-9-9-9-9-9-9-9-9-9-9-'  gold='9+2-7+1+9'
+  XX  (5+(8--4))->  pred='5-8+4-4-4-4-4-'  gold='5+8+4'
+
+Log    : experiments/20260426_162627_2L4H_d128.txt

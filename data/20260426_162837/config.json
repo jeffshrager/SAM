@@ -1,0 +1,13 @@
+{
+  "n_train": 10000,
+  "n_test": 1000,
+  "max_depth_train": 1,
+  "max_depth_test": 4,
+  "allowed_ops": [
+    "neg",
+    "add",
+    "sub"
+  ],
+  "require_neg": true,
+  "seed": 42
+}

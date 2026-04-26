@@ -63,13 +63,94 @@ Project: nanoalgebra
   - Save crashed (missing models/ dir); re-run in progress.
   - Python to use: /usr/local/bin/python3.10 (torch 1.13.1, no MPS).
 
+--- Curriculum training result ---
+
+  Implementation: --curriculum flag in train.py.
+    - Stages: max_depth 1 → 2 → 3 → 4 (cumulative data at each stage)
+    - Advance when test_same >= 0.99 (threshold reached) OR stalls (patience=3)
+    - test_deeper fixed throughout as the generalization probe
+    - LR schedule continues uninterrupted across stage transitions
+    - Same baseline model: 2L 4H d128, 410K params, max_iters=10000
+
+  Stage transitions:
+    Stage 1 (depth≤1): mastered at step 200  (test_deeper=0.093)
+    Stage 2 (depth≤2): mastered at step 600  (test_deeper=0.175)
+    Stage 3 (depth≤3): stalled at step 3800  (test_deeper peaked ~0.228)
+    Stage 4 (depth≤4): stalled at step 4800  (test_deeper=0.264)
+
+  Final results:
+    Joint training (any model size):   test_deeper = 0.173  (hard ceiling)
+    Curriculum 1→2→3→4:               test_deeper = 0.264  (+53% relative)
+
+  Interpretation:
+    Progressive training lifted depth-4 generalization from 17% to 26% using the
+    same model and same total parameters. Most of the gain came during stage 3
+    (depth-3 data), confirming that staged exposure to intermediate complexity
+    matters. The model still hasn't "solved" depth-4 generalization — 26% is well
+    below ceiling — but the gap between joint and curriculum training is real and
+    confirms the training distribution (not capacity) as the bottleneck.
+
+    This is the first concrete evidence for the spec's central hypothesis: that
+    developmental/progressive training order affects what the model learns.
+
 --- Next steps ---
 
-  1. Fix greedy decode (EOS token or length cap in display)
-  2. Curriculum experiment: train on depth-1 → depth-2 → depth-4 progressively;
-     does it improve test_deeper generalization beyond 17%?
+  1. More curriculum: longer training, more stages, or repeated cycling 1→2→3→4→3→2...
+  2. Fix greedy decode display (EOS token or length cap)
   3. Probes: attention pattern visualization, activation patching
   4. Misconception induction: biased training data
+
+--- Model architecture notes ---
+
+  The model is a standard decoder-only transformer (nanoGPT style). Each Block
+  contains two sublayers:
+    1. CausalSelfAttention — multi-head self-attention with a causal (lower-triangular)
+       mask so each token can only attend to itself and earlier tokens.
+    2. MLP — two-layer feedforward with GELU activation, 4x hidden expansion.
+
+  Why attention matters for this task:
+    Negation distribution is inherently a context-sensitive, structure-tracking
+    operation. To correctly rewrite -(a-(b+c)) the model needs to track the
+    accumulated sign across nested parentheses — a token in the output ('+' or '-')
+    depends on the sign context built up by all the enclosing neg/add/sub nodes to
+    its left in the input. Attention is the mechanism that could, in principle,
+    implement this: heads could learn to "look back" at relevant sign-flipping tokens
+    in the input and propagate the accumulated sign forward.
+
+    Whether the model actually uses attention this way — vs. learning shallow
+    positional or bigram statistics that happen to work on depth-2 but break at
+    depth-4 — is an open question, and a prime target for mechanistic interpretability
+    probes (attention pattern visualization, activation patching). The 17% test_deeper
+    ceiling strongly suggests the model is NOT learning a general compositional rule
+    via attention, but rather surface patterns that don't compose to deeper nesting.
+
+--- Model size sweep (in progress) ---
+
+  Motivation: the baseline (2L 4H d128, 410K params) perfectly fits depth-2
+  (test_same=1.000) but stalls at test_deeper=0.173. Is this a capacity limit?
+  Pinned dataset: data/20260426_151458  (seed=42, 10K train, 1K test each split)
+  torch.manual_seed(seed) added for full reproducibility.
+
+  Sweep runs queued (sequential, ~16 min each):
+    baseline  --n_layer 2 --n_head 4 --d_model 128   410K params
+    layers    --n_layer 4 --n_head 4 --d_model 128   720K params
+    width     --n_layer 2 --n_head 8 --d_model 256   1.6M params
+    both      --n_layer 4 --n_head 8 --d_model 256   2.8M params
+
+  Results (all runs used early stopping, patience=3, min_delta=0.01, eval_every=200):
+
+    Config        Params   test_same  test_deeper  stopped at
+    2L 4H d128    410K     1.000      0.173        step 1000
+    4L 4H d128    806K     1.000      0.170        step 800
+    2L 8H d256    1.6M     1.000      0.175        step 800
+    4L 8H d256    3.2M     1.000      0.172        step 800
+
+  Conclusion: 7.5x more parameters bought nothing on test_deeper. The ceiling is
+  firmly at ~17% regardless of model capacity. The bottleneck is the training
+  distribution (depth-2 only), not model size.
+
+  This settles the question: progressive/curriculum training is the necessary
+  next experiment. More capacity cannot substitute for exposure to deeper structure.
 
 --- Key project context (from spec discussions) ---
 
