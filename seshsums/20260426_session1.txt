@@ -1,0 +1,73 @@
+Session Summary — 2026-04-26 (Session 1)
+=========================================
+
+Project: nanoalgebra
+  Tiny GPT-style transformers trained on symbolic algebra to study "understanding,"
+  reification, and bounded rationality in small models.
+
+--- What existed at session start ---
+
+  Repo initialized with three commits:
+    1. Initial commit (README stub)
+    2. Imported Original Spec Discussions — three PDFs/text files in
+       20260425_Original_Spec_Discussions/:
+         - Jeff_Spec_1.pdf
+         - Daivd_Spec_2.pdf
+         - Rousell_Spec_3.txt  (full conversation log; serves as master project outline)
+    3. First try at training data generator — data_gen.py
+
+  data_gen.py status: complete and working.
+    Grammar:  Expr := digit | ('neg',Expr) | ('add',Expr,Expr) | ('sub',Expr,Expr)
+    Task:     Distribute all negations to leaves.
+              -(a+b) -> -a-b,  -(a-b) -> -a+b,  -(-(a)) -> a
+    Format:   "input->target"  (e.g., "-(3+4)->-3-4")
+    Vocab:    ()+-0123456789>  (15 chars; '>' only in '->' separator)
+    Splits:   train, test_same (same depth), test_deeper (OOD depth generalization)
+    Dataset already generated: data/20260426_135510/
+
+--- What happened this session ---
+
+  1. Oriented to project state by reading data_gen.py and the Rousell spec log.
+  2. Created seshsums/ directory for session summaries (this file).
+
+--- Completed this session ---
+
+  Wrote train.py: minimal decoder-only transformer (nanoGPT style) in PyTorch.
+    - GPTConfig dataclass; NanoGPT (tok_emb + pos_emb + N x Block + LN + head, weight-tied)
+    - CausalSelfAttention with registered causal mask buffer
+    - AlgebraDataset: pads to max_len, builds loss mask covering only answer tokens (after '>')
+    - Loss: cross-entropy masked to answer side only
+    - Eval: exact-match accuracy (all answer positions must be correct)
+    - greedy_decode: extends a prompt token-by-token until PAD or max_len
+    - LR schedule: linear warmup + cosine decay
+    - Prints sample predictions (greedy) at end of training
+    - CLI via argparse with sensible defaults (2L 4H d128 max_len=256 5000 iters)
+    - Sanity-checked: 430K params, forward pass OK, eval loop OK, greedy_decode OK
+    - Python to use: /usr/local/bin/python3.10 (has torch 1.13.1)
+
+--- Next steps ---
+
+  Run first training: python3.10 train.py
+  Then: probes, curriculum experiments, misconception induction
+
+--- Key project context (from spec discussions) ---
+
+  Research questions:
+    - Reification: do implicit procedures become explicit reusable concepts?
+    - Misconceptions: procedural errors vs. coherent wrong internal "understandings"
+    - Algebraic reasoning emergence: general principles over classes
+    - Bounded rationality (Simon/Gigerenzer): compact abstractions that generalize
+
+  Training regimes (central experimental axis):
+    - Joint/Random: all expression types mixed
+    - Progressive/Curriculum: digits -> add/sub -> neg -> fractions/division
+
+  Generalization probes:
+    - Held-out digits (model has embeddings but never sees them in training)
+    - Novel recombinations of learned sub-expressions (compositional generalization)
+    - Deeper nesting (OOD depth)
+
+  Theoretical framing:
+    - Reification (Sfard, Dubinsky APOS, Tall procept)
+    - Dehaene number sense (implicit magnitude foundations)
+    - Simon scissors + Gigerenzer ecological rationality
