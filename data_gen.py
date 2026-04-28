@@ -17,6 +17,9 @@ Rewrite task: distribute all negations to the leaves.
 
 Output is always a flat signed sequence of single digits (e.g. -3+4-5),
 so no arithmetic is ever evaluated and all digits remain 0-9.
+
+Design note: keeping digits single-digit ensures there is a 1-to-1 mapping
+between characters and tokens — no multi-char numbers to tokenize differently.
 """
 
 import json
@@ -25,57 +28,98 @@ from datetime import datetime
 from pathlib import Path
 from typing import Union
 
+# An Expr is either a bare integer (a leaf digit) or a tuple whose first element
+# is an operator name and whose remaining elements are sub-expressions.
+# Examples:  5                      — leaf digit
+#            ('neg', 3)             — negate 3
+#            ('add', 2, ('neg', 5)) — 2 + (-(5))
 Expr = Union[int, tuple]
 
-DIGITS = list(range(10))
-ALL_OPS = ('neg', 'add', 'sub')
+DIGITS = list(range(10))           # valid leaf values: 0-9
+ALL_OPS = ('neg', 'add', 'sub')    # complete operator set
 
-# '>' appears only in the '->' separator; never in expressions or targets.
+# The full character vocabulary.  '>' only ever appears as part of the '->'
+# separator, so every other character belongs to either an expression or target.
+# Using sorted() here makes the mapping deterministic across Python runs.
 VOCAB = sorted('0123456789()+->')
 VOCAB_SIZE = len(VOCAB)
-_C2I = {c: i for i, c in enumerate(VOCAB)}
-_I2C = {i: c for i, c in enumerate(VOCAB)}
+_C2I = {c: i for i, c in enumerate(VOCAB)}   # char -> integer id
+_I2C = {i: c for i, c in enumerate(VOCAB)}   # integer id -> char
 
 
 # ── Grammar ───────────────────────────────────────────────────────────────────
+# Functions for building random expression trees.
 
 def sample_expr(max_depth: int, allowed_ops=ALL_OPS, rng=None) -> Expr:
-    """Sample a random expression. allowed_ops controls curriculum stage."""
+    """
+    Recursively sample a random expression tree up to max_depth levels deep.
+
+    allowed_ops lets callers restrict which operators can appear — this is used
+    for curriculum learning where we start with simple expressions and gradually
+    add operators.
+
+    Base case (max_depth == 0): always return a leaf digit so we never build
+    an infinitely tall tree.
+    """
     if rng is None:
         rng = random
+
+    # When at maximum depth, force a leaf to stop recursion.
     if max_depth == 0:
         return rng.choice(DIGITS)
+
+    # Choose uniformly among 'digit' and whichever ops are currently allowed.
+    # Including 'digit' in the choice list means even at depth > 0 we sometimes
+    # create leaves, giving a realistic mix of shallow and tall sub-trees.
     choice = rng.choice(['digit'] + [op for op in ALL_OPS if op in allowed_ops])
+
     if choice == 'digit':
         return rng.choice(DIGITS)
     if choice == 'neg':
+        # Unary: one child
         return ('neg', sample_expr(max_depth - 1, allowed_ops, rng))
     if choice == 'add':
+        # Binary: two independent children, each decreasing depth by one
         return ('add', sample_expr(max_depth - 1, allowed_ops, rng),
                        sample_expr(max_depth - 1, allowed_ops, rng))
-    # sub
+    # sub — identical structure to add
     return ('sub', sample_expr(max_depth - 1, allowed_ops, rng),
                    sample_expr(max_depth - 1, allowed_ops, rng))
 
 
 def depth(expr: Expr) -> int:
+    """Return the height of the expression tree (0 for a leaf digit)."""
     if isinstance(expr, int):
         return 0
+    # For compound nodes, depth is 1 + the tallest child subtree.
     return 1 + max(depth(a) for a in expr[1:])
 
 
 def has_neg(expr: Expr) -> bool:
+    """Return True if any 'neg' node appears anywhere in the tree."""
     if isinstance(expr, int):
         return False
     if expr[0] == 'neg':
         return True
+    # Recurse into all children (expr[1:] skips the operator name at index 0).
     return any(has_neg(a) for a in expr[1:])
 
 
 # ── Serializer ────────────────────────────────────────────────────────────────
+# Converts an expression tree back to the human-readable string that the model
+# will see on its input side (left of '->').
 
 def expr_to_str(expr: Expr) -> str:
-    """Fully-parenthesized string for binary ops; parens around neg arg if compound."""
+    """
+    Serialize an expression tree to a fully-parenthesized string.
+
+    Binary ops wrap their arguments in parentheses, e.g. (3+4).
+    Unary neg is written as a leading '-', e.g. -(3+4) or -3.
+
+    The only tricky case is nested neg: -(-3) must be written -(- 3) not --3.
+    The parentheses are added only when the neg's argument is itself a neg,
+    because a binary-op argument already supplies its own outer parens.
+    """
     if isinstance(expr, int):
         return str(expr)
     op = expr[0]
@@ -92,55 +136,92 @@ def expr_to_str(expr: Expr) -> str:
 
 
 # ── Rewriter: negation distribution ──────────────────────────────────────────
+# This is the algebraic transformation the model must learn:
+#   push all negations inward until every '-' is directly attached to a digit leaf.
 
 def _terms(expr: Expr, sign: int = 1) -> list[tuple[int, int]]:
     """
-    Walk the expression tree, collecting (sign, digit) pairs.
-    sign tracks the accumulated sign from enclosing negations:
-      neg flips it, add preserves it, sub flips it for the right child.
+    Walk the expression tree, collecting (effective_sign, digit) pairs.
+
+    'sign' is the cumulative sign accumulated by traversing enclosing negations.
+    It is always +1 or -1.  The rules are:
+      - add node:  both children inherit the current sign unchanged
+      - sub node:  left child keeps current sign; right child gets sign flipped
+                   (because a-b == a+(-b))
+      - neg node:  the single child gets sign flipped
+      - leaf digit: emit the current sign paired with the digit value
+
+    By the time we reach a leaf, 'sign' encodes the net sign of all negations
+    and subtractions that enclose this digit.
     """
     if isinstance(expr, int):
         return [(sign, expr)]
     op = expr[0]
     if op == 'add':
+        # Both branches of an addition share the same outer sign.
         return _terms(expr[1], sign) + _terms(expr[2], sign)
     if op == 'sub':
+        # Right-hand side of subtraction is implicitly negated.
         return _terms(expr[1], sign) + _terms(expr[2], -sign)
-    # neg
+    # neg: flip the sign for the single child
     return _terms(expr[1], -sign)
 
 
 def rewrite(expr: Expr) -> str:
-    """Distribute negation; return a flat signed-sum string."""
+    """
+    Distribute all negations to the leaves and return a flat signed-sum string.
+
+    Example: -(3+4)  ->  _terms gives [(-1,3), (-1,4)]  ->  "-3-4"
+             -(3-4)  ->  _terms gives [(-1,3), (+1,4)]  ->  "-3+4"
+
+    The first term is special: a positive first term has no leading '+', while
+    all subsequent terms always print an explicit sign character.
+    """
     terms = _terms(expr)
     out = []
     for i, (sign, digit) in enumerate(terms):
         if i == 0:
+            # First term: omit '+' for positive, include '-' for negative.
             out.append(('' if sign > 0 else '-') + str(digit))
         else:
+            # All subsequent terms: always include an explicit sign character.
             out.append(('+' if sign > 0 else '-') + str(digit))
     return ''.join(out)
 
 
 # ── Pairs and tokenizer ───────────────────────────────────────────────────────
+# A "pair" is the complete training string: "input->target".
 
 def make_pair(expr: Expr) -> str:
-    """'input->target' training string."""
+    """Build a single 'input->target' training string from an expression tree."""
     return expr_to_str(expr) + '->' + rewrite(expr)
 
 
 def encode(s: str) -> list[int]:
+    """Convert a string to a list of integer token ids using the vocab mapping."""
     return [_C2I[c] for c in s]
 
 
 def decode(ids: list[int]) -> str:
+    """Convert a list of integer token ids back to a string."""
     return ''.join(_I2C[i] for i in ids)
 
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
+# Utilities to generate and organise train/test splits.
 
 def _sample_split(n: int, max_depth: int, allowed_ops, require_neg: bool,
                   rng: random.Random) -> list[str]:
+    """
+    Sample exactly n expression pairs satisfying the given constraints.
+
+    require_neg=True discards expressions that contain no negation at all,
+    because those would be trivial identity rewrites and would skew the
+    difficulty distribution of the dataset.
+
+    A hard upper bound on attempts prevents infinite loops when the constraints
+    are very tight (e.g. require_neg=True at depth 0).
+    """
     samples, attempts = [], 0
     while len(samples) < n:
         attempts += 1
@@ -166,12 +247,18 @@ def make_dataset(
     seed: int = 42,
 ) -> dict[str, list[str]]:
     """
-    Generate train and test splits.
+    Generate three dataset splits using a single seeded random generator so
+    the splits are reproducible and non-overlapping in sequence (though
+    individual expression trees could theoretically collide).
 
     Splits returned:
       train        — depth <= max_depth_train, for training
       test_same    — same depth as train, fresh samples (catches memorization)
       test_deeper  — depth <= max_depth_test  (depth generalization probe)
+
+    Using a single rng that is advanced in order (train, then test_same, then
+    test_deeper) means the three splits will differ even if their parameters
+    are identical.
     """
     rng = random.Random(seed)
     return {
@@ -182,6 +269,7 @@ def make_dataset(
 
 
 # ── Persistence ──────────────────────────────────────────────────────────────
+# Save and reload datasets so training runs can reuse the same data.
 
 def save_dataset(
     data: dict[str, list[str]],
@@ -197,6 +285,9 @@ def save_dataset(
         train.txt        — one pair per line
         test_same.txt
         test_deeper.txt
+
+    The timestamp in the directory name makes successive runs easy to tell apart
+    without overwriting earlier data.
 
     Returns the path to the created directory.
     """
@@ -216,6 +307,7 @@ def load_dataset(path: str | Path) -> tuple[dict[str, list[str]], dict]:
     Load a dataset saved by save_dataset.
 
     Returns (data, config) where data is a dict of split-name -> list of pair strings.
+    Empty lines (e.g. the trailing newline added by save_dataset) are filtered out.
     """
     p = Path(path)
     config = json.loads((p / 'config.json').read_text())
@@ -227,6 +319,7 @@ def load_dataset(path: str | Path) -> tuple[dict[str, list[str]], dict]:
 
 
 # ── Smoke test ────────────────────────────────────────────────────────────────
+# Run this file directly to verify the data generation pipeline end-to-end.
 
 if __name__ == '__main__':
     import re
