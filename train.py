@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import json
 import math
 import time
 from datetime import datetime
@@ -469,21 +470,63 @@ def train(args):
     # MPS (torch 1.13) is unreliable for this workload; prefer CUDA then CPU.
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+    # Timestamp of this run (wall-clock start time), used in intparams and
+    # also as the auto-generated expdir name when --expdir is not supplied.
     ts  = datetime.now().strftime('%Y%m%d_%H%M%S')
     tag = f"{args.n_layer}L{args.n_head}H_d{args.d_model}"
-    log_path = Path(args.exp_dir) / f"{ts}_{tag}.txt"
+
+    # ── Establish the experiment directory ────────────────────────────────────
+    # If the user pre-created a directory and passed --expdir, use it as-is;
+    # they may have placed experiment-specific input files there already.
+    # Otherwise create a fresh timestamped directory under experiments/.
+    if args.expdir:
+        expdir = Path(args.expdir)
+        expdir_preexisting = expdir.exists()   # note whether we found it or made it
+        expdir.mkdir(parents=True, exist_ok=True)
+    else:
+        expdir = Path('experiments') / ts
+        expdir_preexisting = False
+        expdir.mkdir(parents=True, exist_ok=True)
+
+    # ── Write extparams immediately ───────────────────────────────────────────
+    # extparams contains exactly what was on the command line (or argparse
+    # defaults) — nothing the code computed or chose itself.  Writing this
+    # first means the record survives even if the run crashes later.
+    (expdir / 'extparams.json').write_text(json.dumps(vars(args), indent=2))
+
+    # ── Logger goes into the expdir ───────────────────────────────────────────
+    log_path = expdir / 'run.log'
     log = Logger(log_path)
 
     log(f"Run    : {ts}  {tag}")
+    log(f"Expdir : {expdir}  (pre-existing={expdir_preexisting})")
     log(f"Device : {device}")
+
+    # ── intparams: collected throughout the run, written at the end ───────────
+    # intparams records everything the code decided or derived — the complement
+    # of extparams.  'data_dirs' is a list because curriculum mode generates
+    # multiple datasets (one per stage plus the fixed deeper test set).
+    intparams = {
+        'run_timestamp':       ts,
+        'expdir':              str(expdir),
+        'expdir_preexisting':  expdir_preexisting,
+        'tag':                 tag,
+        'device':              device,
+        'data_dirs':           [],   # populated below as datasets are generated
+    }
 
     # ── Data helpers ──────────────────────────────────────────────────────────
     max_len = args.max_len
 
     def _make_loaders(depth, label=''):
         """
-        Generate a fresh dataset at the given max training depth, save it,
-        and return (train_loader, same_loader, raw_data_dict).
+        Generate a fresh dataset at the given max training depth, save it
+        inside expdir/data/, record its path in intparams, and return
+        (train_loader, same_loader, raw_data_dict).
+
+        Saving inside expdir/data/ keeps all inputs and outputs for a run
+        co-located.  save_dataset appends its own timestamp subdirectory, so
+        successive calls in curriculum mode each get a unique path.
         """
         cfg = dict(
             n_train=args.n_train, n_test=args.n_test,
@@ -493,7 +536,11 @@ def train(args):
             require_neg=True, seed=args.seed,
         )
         d = make_dataset(**cfg)
-        saved = save_dataset(d, cfg, base_dir='data')
+        # Save to expdir/data/<timestamp>/ rather than a top-level data/ folder
+        # so the dataset is part of this experiment's directory tree.
+        saved = save_dataset(d, cfg, base_dir=str(expdir / 'data'))
+        # Record the path as an internally-derived parameter.
+        intparams['data_dirs'].append(str(saved))
         log(f"Data{label}: depth_train={depth}  train={len(d['train'])}  "
             f"test_same={len(d['test_same'])}  saved={saved}")
         tr = DataLoader(AlgebraDataset(d['train'],     max_len),
@@ -517,11 +564,14 @@ def train(args):
         deep_cfg = dict(n_train=10, n_test=args.n_test,
                         max_depth_train=stages[-1], max_depth_test=args.max_depth_test,
                         allowed_ops=list(ALL_OPS), require_neg=True, seed=args.seed + 1)
-        deep_data   = make_dataset(**deep_cfg)
+        deep_data        = make_dataset(**deep_cfg)
+        # Save this fixed deeper dataset into expdir like all other generated data.
+        deep_saved       = save_dataset(deep_data, deep_cfg, base_dir=str(expdir / 'data'))
+        intparams['data_dirs'].append(str(deep_saved))
         deep_loader = DataLoader(AlgebraDataset(deep_data['test_deeper'], max_len),
                                  batch_size=args.batch_size, shuffle=False)
         log(f"Data   : fixed test_deeper={len(deep_data['test_deeper'])}  "
-            f"depth_test={args.max_depth_test}")
+            f"depth_test={args.max_depth_test}  saved={deep_saved}")
 
         stage_idx    = 0
         train_loader, same_loader, data = _make_loaders(stages[0], label=f'[stage 1/{len(stages)}]')
@@ -552,6 +602,7 @@ def train(args):
     )
     model = NanoGPT(cfg).to(device)
     n_params = sum(p.numel() for p in model.parameters())
+    intparams['n_params'] = n_params   # total trainable parameter count
     log(f"Params : {n_params:,}  ({cfg.n_layer}L {cfg.n_head}H d{cfg.d_model}  "
         f"max_len={max_len}  bs={args.batch_size}  iters={args.max_iters}  lr={args.lr})")
 
@@ -699,6 +750,15 @@ def train(args):
                    save_path)
         log(f"Model  : {save_path}")
 
+    # ── Write intparams ───────────────────────────────────────────────────────
+    # Now that the run is complete, record the final accuracy values and status.
+    # Written last so it reflects the true end state of the run.
+    intparams['final_acc_same']   = acc_s
+    intparams['final_acc_deeper'] = acc_d
+    intparams['run_status']       = status
+    (expdir / 'intparams.json').write_text(json.dumps(intparams, indent=2))
+    log(f"Params : {expdir / 'intparams.json'}")
+
     log.close()
 
 
@@ -727,7 +787,9 @@ def parse_args():
     p.add_argument('--log_every',       type=int,   default=200)
     p.add_argument('--eval_every',      type=int,   default=200)
     p.add_argument('--save',            default=None, help='path to save model (.pt)')
-    p.add_argument('--exp_dir',         default='experiments', help='directory for run logs')
+    p.add_argument('--expdir',          default=None,
+                   help='experiment directory (created if absent; auto-named under '
+                        'experiments/ if omitted)')
     p.add_argument('--patience',        type=int,   default=3,
                    help='early-stop window in evals (0 = disabled)')
     p.add_argument('--min_delta',       type=float, default=0.01,

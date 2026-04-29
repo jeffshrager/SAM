@@ -1,0 +1,1 @@
+- [Deep commenting style required](feedback_deep_comments.md) — All code must be verbosely commented: block comments per section, inline shape annotations on every tensor op, worked examples for masks/index math.
