@@ -1,0 +1,166 @@
+================================================================
+David writes:
+
+I noticed that the training data look quite weird compared to what a
+human would be exposed to. The sequence first of all is bizarre, but I
+guess that's intentional given that we want to investigate effects of
+sequence. More importantly though, the items themselves are bizarre --
+they don't look like items that a real human would ever see. The focus
+seems to be on varying syntactic complexity, whereas human training
+data generally involves very simple syntax (i.e., expressions with
+only two or three terms for the most part, with four or five appearing
+occasionally and more than five being very rare). With human data the
+main variation involves the numbers and operations rather than
+syntactic complexity. There is also a lot of frank repetition. Should
+we try to make the training data more "realistic" in this respect?
+
+Another comment is that your current setup seems to assume an input
+that is an arithmetic expression involving only arithmetic operators,
+and an output that is an equivalent but hopefully simpler such
+expression -- right? If so I have two questions:
+
+First, if we want to investigate development of equivalence
+understanding as I have proposed then at some point we will want to
+include expressions that involve an equals sign, i.e., equations. If
+we are investigating effects of sequence then we will want such
+expressions to appear even very early in the training data for the
+random-sequence conditions.
+
+Second, it is a little hard to see how this model could ever learn to
+confuse the equals symbol "=" with the "execute" operation "->"
+because these two are fundamentally different at an architectural
+level. Presumably the equals sign will actually be a symbol that
+appears in the input and output expressions. The "->" by contrast is
+not a symbol but a shorthand for the input-output relation. Children
+confuse these, but how could the model ever confuse them? We should
+consider what the architecture needs to look like in order to make
+such confusion possible.
+
+================================================================
+Jeff writes:
+
+First off, the order is mostly random at the moment for two reasons,
+first, as you note, it's a bit for experimental randomization. But
+also, we haven't really indicated yet what the curricular order should
+be. Claude did make some choices, and for example the experiments I
+did did have a complexity ordering, but, yeah, it's definitely not a
+pedagogical ordering, and I agree that it should be (although
+randomized below the level of the curricular architecture). So that's
+something to fix soon.
+
+The second thing that I can address right away is the -> v. =
+question. What -> means is "transforms to", which is (as you note)
+completely different than "=". I would expect that we would want
+things in a more controlled currcilum to say things like:
+
+       3*x = 9 -> x=9/3
+
+(BTW, one thing that I was a little bit surprised about is that it
+never actually does the math. I was going to ask Claude to fix that,
+but I'm actually not sure it should be doing the math. In fact, one
+thing that I wondered just yesterday as I was working this is whether
+we shouldn't be teaching algebra entirely in symbols from very early
+on -- just as a symbol pushing game? (There is an ios game -- app game
+-- called something like dragon algebra that does this, but it tried
+to gamify it way too much and ends up being pretty useless.)
+
+================================================================
+David writes (re seshsums/20260429_tech_note.md):
+
+Isn't Claude's comment that "this -> that" is literally fed to the
+training routine good news from our point of view? In other words,
+contrary to my initial assumption, "->" actually is a symbol to
+Claude. So if Claude is sometimes presented "3+2->" with expected
+response "5", and is sometimes presented "3+2=->" with expected
+response "5", perhaps it could learn to understand "=" as meaning
+something similar to "->"?
+
+A standard task in the equivalence understanding literature is asking
+children to answer questions like "3+4+1 = 3+_"? Where children often
+say "8" or "11" instead of 5". I guess we could test this by
+presenting trials like "3+4+1 = 3+__ ->". I think it's very likely
+that Claude would respond "8" or "11". In fact it is hard to see how
+it would ever respond "5".
+
+================================================================
+Jeff writes:
+
+I'm not sure why you say this. Clearly (well, by assumption clearly)
+it will have learned that 4+1->5 (the current model isn't actually
+doing the arithmetic, but we know what we're talking about) and so
+it's not at all unreasonable to expect that it might learn the
+trajectory you've described. In fact, this is sort of the point of the
+whole exercise -- or one of the points --being that that precise
+transformation -- reducing 4+1 -> 5 ... or, in the current model,
+since it's not actually doing arithmetic, more like reducing, say
+"-(--9)" to "(--9)" to "(+9)" to "+9" to "9" is what we're hoping to
+get. (Which actually leads me to realize that there's actually no
+reason it shouldn't be just doing the arithmetic, since that's pretty
+much just a symbol manipulation game as well.
+
+Before you jump on arithmetic just being a symbol manipulation game
+... I realize that it's not! My point ... and again, actually one of
+the central points of this experiment is to explore the claim that if
+you teach a deep gpt (an llm, if you like) math purely as a symbol
+manilauon game, it will learn internal representations that are
+representing "higher order concepts" (whatever that means), that, for
+example, deep in the network someplace there will be the functional
+equivalent of a number line.
+
+Now, of course, you could just GIVE IT a number line, and teach
+numbers as being in places along it, but that would have to be taught,
+and represented someplace in the model somehow as well, and would,
+hopefully, give models "taught" in that way a leg up over ones that
+either infer the number line, or nver infer anything like a number
+line and merely always are playing a simple symbol pushing game.
+
+================================================================
+David writes:
+
+My point was not that the model would not learn 3 + 1 = 4. Instead, my
+point was that the model, like children, might not understand the
+significance of the equal sign when operations appear on both sides of
+it, if it has not been trained on that pattern. It might well
+interpret the equal sign to mean the same thing in that context as
+what it means in the more usual context, when operations only appear
+on one side of it. In the latter context the meaning of the equal sign
+is just to compute. In other words, the same meaning that is normally
+attributed to the arrow sign. That is the usual misunderstanding that
+occurs among children, and I think it possibly might appear in our
+model as well. If that is so, then great - it is realistically
+simulating children's development, even though the response would be
+mathematically incorrect.
+
+================================================================
+Claude responds:
+
+The key points as I read them:                                                                       
+                                                                                                       
+  1. Training data realism (David): The current generator produces deep, syntactically complex         
+  expressions that don't match human exposure. Real human math experience is mostly 2-3 term
+  expressions with repetition and variation in numbers, not syntactic structure. This is a legitimate  
+  concern — it might affect what the model learns and how it generalizes.
+  2. -> as a literal symbol (David's insight): This is sharp. Since -> is actually in the token
+  sequence, the model could potentially learn the relationship between = and -> if both appear in      
+  training. David's proposed test — "3+4+1 = 3+_ ->" — is a concrete, runnable experiment right now
+  with minimal infrastructure changes (just add = and _ to the vocab and training data).               
+  3. The equivalence understanding prediction: David predicts the model would respond "8" or "11"
+  (treating = as "compute the left side") rather than "5" (treating = as relational). Jeff thinks it   
+  might get it right. This is an empirically settleable question.
+  4. Arithmetic vs. pure symbol manipulation: Currently the model never computes — it only rearranges  
+  symbols. Jeff raises whether it should actually evaluate expressions. The deeper point is whether a  
+  model trained on pure symbol manipulation develops internal representations (e.g., a number line)
+  anyway — which is one of the central research questions.                                             
+  5. The children's = misconception: David's most specific point — children systematically misread = in
+   a+b+c = a+_ as "compute the left" because they've only seen = in contexts like 3+2=5. The model may 
+  replicate this exactly for the same structural reason.
+                                                                                                       
+  Actionable items I'd flag:                                
+  - The = / equivalence experiment is low-hanging fruit — small vocab change, new data generator,
+  testable now                                                                                         
+  - The data realism concern probably matters more once we add arithmetic; for pure negation
+  distribution it's less critical                                                                      
+  - The number line question is the long-term mechanistic probe target
+                                                                      
+  Want me to add all of this as a tech note and flag the = experiment as a concrete next step?
+
