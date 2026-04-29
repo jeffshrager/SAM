@@ -4,7 +4,10 @@
       "Bash(python3 *)",
       "Bash(/usr/local/bin/python3.10 *)",
       "Bash(awk '{print \"Running, CPU time:\", $10}')",
-      "Read(//Users/jeffshrager/.claude/**)"
+      "Read(//Users/jeffshrager/.claude/**)",
+      "Bash(conda info *)",
+      "Read(//Users/jeffshrager/**)",
+      "Bash(/Users/jeffshrager/opt/anaconda3/envs/test/bin/python *)"
     ]
   }
 }

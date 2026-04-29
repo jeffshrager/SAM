@@ -462,6 +462,36 @@ def evaluate(model, loader, device) -> float:
     return correct / total if total else 0.0
 
 
+# ── Deep-sample collector ─────────────────────────────────────────────────────
+
+@torch.no_grad()
+def collect_correct_deep(model, pairs: list[str], device, n: int) -> list[str]:
+    """
+    Greedily decode each string in `pairs` and return up to n examples where
+    the model's prediction exactly matches the gold target.
+
+    Returns a list of 'src->pred' strings (the '->pred' portion is the model
+    output, which equals the gold when the sample is correct).
+
+    We iterate in dataset order and stop as soon as we have n correct samples,
+    so this is O(n/accuracy) greedy calls on average.  With a 1 000-sample
+    test set and n=100 the worst case is 1 000 calls, which is fast.
+    """
+    model.eval()
+    found = []
+    for raw in pairs:
+        if len(found) >= n:
+            break
+        src, tgt = raw.split('->')
+        prompt  = encode(src + '->')
+        out_ids = greedy_decode(model, prompt, device, max_new=len(tgt) * 2 + 4)
+        # out_ids[len(prompt):] are the tokens generated after the prompt.
+        pred = ''.join(_I2C.get(i, '?') for i in out_ids[len(prompt):])
+        if pred == tgt:
+            found.append(f'{src}->{pred}')
+    return found
+
+
 # ── Training ──────────────────────────────────────────────────────────────────
 
 def train(args):
@@ -573,8 +603,11 @@ def train(args):
         log(f"Data   : fixed test_deeper={len(deep_data['test_deeper'])}  "
             f"depth_test={args.max_depth_test}  saved={deep_saved}")
 
-        stage_idx    = 0
+        stage_idx  = 0
         train_loader, same_loader, data = _make_loaders(stages[0], label=f'[stage 1/{len(stages)}]')
+        # In curriculum mode the deeper test set is fixed for the whole run,
+        # so deep_pairs points to the pre-generated deeper split throughout.
+        deep_pairs = deep_data['test_deeper']
 
     elif args.data_dir:
         data, gen_cfg = load_dataset(args.data_dir)
@@ -586,11 +619,13 @@ def train(args):
                                   batch_size=args.batch_size, shuffle=False)
         deep_loader  = DataLoader(AlgebraDataset(data['test_deeper'], max_len),
                                   batch_size=args.batch_size, shuffle=False)
+        deep_pairs = data['test_deeper']
 
     else:
         train_loader, same_loader, data = _make_loaders(args.max_depth_train)
         deep_loader = DataLoader(AlgebraDataset(data['test_deeper'], max_len),
                                  batch_size=args.batch_size, shuffle=False)
+        deep_pairs = data['test_deeper']
 
     # ── Model ─────────────────────────────────────────────────────────────────
     cfg   = GPTConfig(
@@ -631,6 +666,14 @@ def train(args):
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
+    # ── Initialise progress-tracking output files ────────────────────────────
+    # metrics.csv: one row per evaluation checkpoint, written throughout the run.
+    # Created fresh here (overwriting any prior run's file in a pre-existing
+    # expdir) so the header is always at line 1.
+    metrics_path      = expdir / 'metrics.csv'
+    deep_samples_path = expdir / 'deep_samples.txt'
+    metrics_path.write_text('step,loss,acc_same,acc_deeper\n')
+
     # ── Training loop ─────────────────────────────────────────────────────────
     if args.curriculum:
         log(f"\n=== Stage 1/{len(stages)}: max_depth={stages[0]} ===")
@@ -644,6 +687,7 @@ def train(args):
     deeper_history = []    # test_deeper accuracy recorded at each eval step
     same_history   = []    # test_same accuracy, reset at each curriculum stage
     stopped_early  = False
+    last_loss      = float('nan')   # most-recent training loss; captured for CSV
 
     for step in range(args.max_iters + 1):
         # ── Fetch one batch ───────────────────────────────────────────────────
@@ -665,6 +709,7 @@ def train(args):
         nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
         scheduler.step()
+        last_loss = loss.item()   # snapshot for the next eval checkpoint
 
         # ── Logging ───────────────────────────────────────────────────────────
         if step % args.log_every == 0:
@@ -681,6 +726,31 @@ def train(args):
 
             deeper_history.append(acc_d)
             same_history.append(acc_s)
+
+            # ── Append one row to metrics.csv ─────────────────────────────────
+            # last_loss is from the most recent training step before this eval.
+            # Opening in append mode ('a') means each eval adds exactly one line
+            # and the file is safe to `tail -f` from another terminal.
+            with open(metrics_path, 'a') as mf:
+                mf.write(f'{step},{last_loss:.6f},{acc_s:.6f},{acc_d:.6f}\n')
+
+            # ── Append a block of correct deep examples to deep_samples.txt ──
+            # Collect up to args.rndc examples where the model's greedy output
+            # matches the gold target.  The header line gives enough context to
+            # read the file with `tail -f` without needing to see earlier blocks.
+            correct_examples = collect_correct_deep(
+                model, deep_pairs, device, args.rndc
+            )
+            with open(deep_samples_path, 'a') as sf:
+                sf.write(
+                    f'=== step {step:5d}  loss={last_loss:.4f}  '
+                    f'acc_same={acc_s:.3f}  acc_deeper={acc_d:.3f}  '
+                    f'[{len(correct_examples)} correct shown of '
+                    f'{len(deep_pairs)} sampled] ===\n'
+                )
+                for ex in correct_examples:
+                    sf.write(f'  {ex}\n')
+                sf.write('\n')   # blank line between blocks for readability
 
             if args.curriculum:
                 # ── Curriculum stage-advance logic ────────────────────────────
@@ -786,6 +856,8 @@ def parse_args():
     p.add_argument('--warmup_iters',    type=int,   default=200)
     p.add_argument('--log_every',       type=int,   default=200)
     p.add_argument('--eval_every',      type=int,   default=200)
+    p.add_argument('--rndc',            type=int,   default=100,
+                   help='max correct deep examples to show per eval checkpoint')
     p.add_argument('--save',            default=None, help='path to save model (.pt)')
     p.add_argument('--expdir',          default=None,
                    help='experiment directory (created if absent; auto-named under '
