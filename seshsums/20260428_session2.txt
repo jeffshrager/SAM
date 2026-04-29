@@ -82,11 +82,38 @@ Project: nanoalgebra (SAM repo)
      (/Users/jeffshrager/opt/anaconda3/envs/test/).
      numpy downgraded to 1.26.4 to match torch 2.2.2's compiled ABI.
 
+--- Completed runs and results ---
+
+  A. Curriculum run: experiments/20260428_175721/
+       --curriculum --max_iters 10000 (stages 1->2->3->4)
+       Fixed test_deeper: depth 3-4 only (min_depth_test=3)
+       Stage 1 (depth<=1): mastered at step 200  (test_deeper=0.006)
+       Stage 2 (depth<=2): mastered at step 400  (test_deeper=0.006)
+       Stage 3 (depth<=3): slow climb; test_same 0.35->0.82 over ~5000 steps
+       Stage 4 (depth<=4): stalled; test_same only reached 0.350
+       Final: test_same=0.350  test_deeper=0.224  (stalled at step 8200)
+
+  B. Non-curriculum depth<=4 run: experiments/20260428_180921/
+       --max_depth_train 4 --max_iters 10000
+       Trains directly on depth<=4 from the start, no staged curriculum.
+       Final: test_same=0.227  test_deeper=0.127  (early stopped at step 2000)
+
+  Comparison (same model, same test set):
+    Curriculum 1->2->3->4:   test_deeper = 0.224  (+77% relative)
+    Non-curriculum depth<=4: test_deeper = 0.127
+
+  Curriculum wins convincingly on test_deeper.  However two caveats:
+    1. Neither model mastered depth-4 in-distribution (test_same 35% and 23%),
+       suggesting the model may be at capacity for depth-4 complexity.
+    2. Non-curriculum early stopping (based on test_deeper plateau) cut it off
+       at step 2000 before test_same converged — potentially unfair.
+       Planned follow-up: re-run non-curriculum with --patience 0 to let it
+       train the full 10000 steps.
+
 --- State at session end ---
 
-  Curriculum run (--curriculum --max_iters 10000) in progress in background.
-  Expected: stages depth 1->2->3->4, fixed test_deeper with min_depth=3.
-  This is the first run with all the new infrastructure in place.
+  Both runs complete.  Follow-up planned: non-curriculum depth<=4 with
+  --patience 0 for a fairer comparison.
 
 --- Key decisions / design notes ---
 

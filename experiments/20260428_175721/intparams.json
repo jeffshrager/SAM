@@ -1,0 +1,18 @@
+{
+  "run_timestamp": "20260428_175721",
+  "expdir": "experiments/20260428_175721",
+  "expdir_preexisting": false,
+  "tag": "2L4H_d128",
+  "device": "cpu",
+  "data_dirs": [
+    "experiments/20260428_175721/data/20260428_175721",
+    "experiments/20260428_175721/data/20260428_175721",
+    "experiments/20260428_175721/data/20260428_175805",
+    "experiments/20260428_175721/data/20260428_175841",
+    "experiments/20260428_175721/data/20260428_182244"
+  ],
+  "n_params": 410112,
+  "final_acc_same": 0.35,
+  "final_acc_deeper": 0.224,
+  "run_status": "full-run"
+}
