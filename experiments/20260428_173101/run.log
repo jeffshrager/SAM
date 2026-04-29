@@ -1,7 +1,0 @@
-Run    : 20260428_173101  2L4H_d128
-Expdir : experiments/20260428_173101  (pre-existing=False)
-Device : cpu
-Data: depth_train=2  train=10000  test_same=1000  saved=experiments/20260428_173101/data/20260428_173101
-Params : 410,112  (2L 4H d128  max_len=96  bs=64  iters=1000  lr=0.0003)
-
-step     0  loss 2.2272  lr 1.50e-06  0s

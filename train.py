@@ -392,17 +392,20 @@ class NanoGPT(nn.Module):
             #   logits.view(-1, EXT_VOCAB): (B*T, EXT_VOCAB)
             #   targets.view(-1):           (B*T,)
             #
-            # ignore_index=PAD_ID: positions where target==PAD_ID contribute 0
-            #   loss automatically (without needing the mask).
-            #
             # reduction='none': return one loss value per token instead of the
             #   mean, so we can apply our own answer-position mask.
+            #
+            # Note: we do NOT use ignore_index=PAD_ID here.  PyTorch's
+            # ignore_index zeroes the loss wherever the TARGET is PAD_ID,
+            # which would silently kill the EOS training signal (the one
+            # unmasked PAD position we deliberately added to teach the model
+            # to stop).  The mask handles all position filtering exclusively:
+            # answer positions + EOS position have mask=1; everything else 0.
             #
             # Step 2: reshape back to (B, T) so mask can be applied per-sample.
             raw = nn.functional.cross_entropy(
                 logits.view(-1, EXT_VOCAB),   # (B*T, EXT_VOCAB)
                 targets.view(-1),             # (B*T,)
-                ignore_index=PAD_ID,
                 reduction='none',
             ).view(B, T)                      # (B, T) — per-token loss values
 
