@@ -1,0 +1,14 @@
+{
+  "run_timestamp": "20260428_172255",
+  "expdir": "experiments/20260428_172255",
+  "expdir_preexisting": false,
+  "tag": "2L4H_d128",
+  "device": "cpu",
+  "data_dirs": [
+    "experiments/20260428_172255/data/20260428_172256"
+  ],
+  "n_params": 410112,
+  "final_acc_same": 1.0,
+  "final_acc_deeper": 0.172,
+  "run_status": "early-stop"
+}

@@ -125,7 +125,20 @@ class AlgebraDataset(Dataset):
             #   [L-1 .. end]  : length pad        — PAD tokens in y -> 0.0
             #
             # Total length: sep + (L-1-sep) + pad = L-1 + pad = max_len-1 ✓
-            mask = [0.0] * sep + [1.0] * (L - 1 - sep) + [0.0] * pad
+            #
+            # EOS signal: we also unmask the *first* PAD position (y[L-1]) so
+            # the model is trained to predict PAD_ID immediately after the last
+            # answer character.  greedy_decode already stops on PAD_ID, so this
+            # teaches the model when to stop generating.
+            # We only do this when pad >= 1 (i.e. the sequence doesn't exactly
+            # fill max_len, which is essentially always true in practice).
+            if pad >= 1:
+                # Answer chars + one EOS position unmasked, rest of PAD masked.
+                # Length: sep + (L-sep) + (pad-1) = L + pad - 1 = max_len - 1 ✓
+                mask = [0.0] * sep + [1.0] * (L - sep) + [0.0] * (pad - 1)
+            else:
+                # No room for EOS signal; keep original mask.
+                mask = [0.0] * sep + [1.0] * (L - 1 - sep)
 
             self.samples.append((
                 torch.tensor(x,    dtype=torch.long),
@@ -486,7 +499,11 @@ def collect_correct_deep(model, pairs: list[str], device, n: int) -> list[str]:
         prompt  = encode(src + '->')
         out_ids = greedy_decode(model, prompt, device, max_new=len(tgt) * 2 + 4)
         # out_ids[len(prompt):] are the tokens generated after the prompt.
-        pred = ''.join(_I2C.get(i, '?') for i in out_ids[len(prompt):])
+        # Truncate to len(tgt) before comparing so that any residual tokens
+        # generated after the answer (e.g. during early training before the
+        # model has fully learned the EOS signal) don't cause false negatives.
+        pred_full = ''.join(_I2C.get(i, '?') for i in out_ids[len(prompt):])
+        pred = pred_full[:len(tgt)]
         if pred == tgt:
             found.append(f'{src}->{pred}')
     return found

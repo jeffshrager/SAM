@@ -11,3 +11,21 @@ step   400  loss 0.0137  lr 2.60e-04  90s
          >> test_same=1.000  test_deeper=0.172
 step   600  loss 0.0069  lr 1.64e-04  145s
          >> test_same=1.000  test_deeper=0.172
+step   800  loss 0.0054  lr 6.92e-05  204s
+         >> test_same=1.000  test_deeper=0.172
+  [early stop] test_deeper no improvement > 0.01 in last 3 evals — stopping at step 800
+
+Final  test_same=1.000  test_deeper=0.172  (early-stop)
+
+Sample predictions (greedy):
+  XX  -6->  pred='-6+6-6-6'  gold='-6'
+  XX  (-8-(5-0))->  pred='-8-5+0-0+5-0-0-0'  gold='-8-5+0'
+  XX  -(8-7)->  pred='-8+7+7-7-7-7'  gold='-8+7'
+  XX  -(2-1)->  pred='-2+1-2-1+1-1'  gold='-2+1'
+  XX  ((1-7)--4)->  pred='1-7+4+7-7-7-7-'  gold='1-7+4'
+  XX  -5->  pred='-5+5-5-5'  gold='-5'
+  XX  -2->  pred='-2+2-2-2'  gold='-2'
+  XX  -(9+2)->  pred='-9-2+2-2-2-2'  gold='-9-2'
+
+Log    : experiments/20260428_172255/run.log
+Params : experiments/20260428_172255/intparams.json

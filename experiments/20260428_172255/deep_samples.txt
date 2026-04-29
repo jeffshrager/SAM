@@ -4,3 +4,5 @@
 
 === step   600  loss=0.0069  acc_same=1.000  acc_deeper=0.172  [0 correct shown of 1000 sampled] ===
 
+=== step   800  loss=0.0054  acc_same=1.000  acc_deeper=0.172  [0 correct shown of 1000 sampled] ===
+
