@@ -1,1 +1,2 @@
 - [Deep commenting style required](feedback_deep_comments.md) — All code must be verbosely commented: block comments per section, inline shape annotations on every tensor op, worked examples for masks/index math.
+- [SAM open experimental questions](project_open_questions.md) — Deferred experiments: fair non-curriculum baseline (--patience 0), n_layer sweep {2,4,6} with curriculum, longer training, mechanistic probes.

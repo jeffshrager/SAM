@@ -112,8 +112,37 @@ Project: nanoalgebra (SAM repo)
 
 --- State at session end ---
 
-  Both runs complete.  Follow-up planned: non-curriculum depth<=4 with
-  --patience 0 for a fairer comparison.
+  Both runs complete.
+
+--- Open questions and next experiments ---
+
+  1. Fairer non-curriculum baseline
+     Re-run non-curriculum depth<=4 with --patience 0 so it trains the full
+     10000 steps without early stopping cutting it off at step 2000.
+     Current comparison may understate what flat depth-4 training can do.
+
+  2. Network depth sweep (curriculum only)
+     The Session 1 capacity sweep (2L->4L, d128->d256) showed no improvement,
+     but it was run with depth<=2 training — too easy to stress the model.
+     Now that depth-4 training only achieves 35% test_same, capacity may
+     actually be the bottleneck.
+     Theoretical motivation: a depth-N expression requires tracking sign across
+     N levels of nesting; a 2-layer transformer has only 2 rounds of attention-
+     based composition, which may be insufficient for depth-4 structurally.
+     Proposed sweep: --n_layer in {2, 4, 6} with --curriculum, same everything
+     else.  ~30 min per run on CPU.  Would tell us whether depth (not just
+     training order) is limiting generalization.
+
+  3. Longer curriculum training
+     Stage 4 stalled with test_same=0.35.  More iters (--max_iters 20000 or
+     higher) or a lower LR floor in the cosine schedule might let it converge
+     further before stalling.
+
+  4. Mechanistic probes (longer term)
+     Attention pattern visualization and activation patching to understand
+     whether the model is learning a compositional sign-tracking algorithm
+     or surface patterns.  Most meaningful once a model reaches higher
+     test_deeper (>50%).
 
 --- Key decisions / design notes ---
 
