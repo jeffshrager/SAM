@@ -1,0 +1,31 @@
+Run    : 20260428_175318  2L4H_d128
+Expdir : experiments/20260428_175318  (pre-existing=False)
+Device : cpu
+Data: depth_train=2  train=10000  test_same=1000  saved=experiments/20260428_175318/data/20260428_175319
+Params : 410,112  (2L 4H d128  max_len=96  bs=64  iters=1000  lr=0.0003)
+
+step     0  loss 2.8734  lr 1.50e-06  0s
+step   200  loss 0.3049  lr 3.00e-04  37s
+         >> test_same=0.770  test_deeper=0.008
+step   400  loss 0.0146  lr 2.60e-04  88s
+         >> test_same=1.000  test_deeper=0.007
+step   600  loss 0.0075  lr 1.64e-04  128s
+         >> test_same=1.000  test_deeper=0.007
+step   800  loss 0.0058  lr 6.92e-05  169s
+         >> test_same=1.000  test_deeper=0.007
+  [early stop] test_deeper no improvement > 0.01 in last 3 evals — stopping at step 800
+
+Final  test_same=1.000  test_deeper=0.007  (early-stop)
+
+Sample predictions (greedy):
+  OK  -6->  pred='-6'  gold='-6'
+  OK  (-8-(5-0))->  pred='-8-5+0'  gold='-8-5+0'
+  OK  -(8-7)->  pred='-8+7'  gold='-8+7'
+  OK  -(2-1)->  pred='-2+1'  gold='-2+1'
+  OK  ((1-7)--4)->  pred='1-7+4'  gold='1-7+4'
+  OK  -5->  pred='-5'  gold='-5'
+  OK  -2->  pred='-2'  gold='-2'
+  OK  -(9+2)->  pred='-9-2'  gold='-9-2'
+
+Log    : experiments/20260428_175318/run.log
+Params : experiments/20260428_175318/intparams.json

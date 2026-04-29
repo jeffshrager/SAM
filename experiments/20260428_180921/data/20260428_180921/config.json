@@ -1,8 +1,9 @@
 {
   "n_train": 10000,
   "n_test": 1000,
-  "max_depth_train": 2,
+  "max_depth_train": 4,
   "max_depth_test": 4,
+  "min_depth_test": 3,
   "allowed_ops": [
     "neg",
     "add",

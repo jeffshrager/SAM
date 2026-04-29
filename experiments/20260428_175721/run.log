@@ -1,0 +1,53 @@
+Run    : 20260428_175721  2L4H_d128
+Expdir : experiments/20260428_175721  (pre-existing=False)
+Device : cpu
+Curriculum stages: [1, 2, 3, 4]  threshold=0.99
+Data   : fixed test_deeper=1000  depth_test=4  saved=experiments/20260428_175721/data/20260428_175721
+Data[stage 1/4]: depth_train=1  train=10000  test_same=1000  saved=experiments/20260428_175721/data/20260428_175721
+Params : 410,112  (2L 4H d128  max_len=96  bs=64  iters=10000  lr=0.0003)
+
+=== Stage 1/4: max_depth=1 ===
+
+step     0  loss 2.8665  lr 1.50e-06  0s
+step   200  loss 0.0503  lr 3.00e-04  37s
+         >> test_same=1.000  test_deeper=0.006
+
+=== Stage 2/4: max_depth=2  (threshold reached at step 200) ===
+Data[stage 2/4]: depth_train=2  train=10000  test_same=1000  saved=experiments/20260428_175721/data/20260428_175805
+step   400  loss 0.0154  lr 3.00e-04  72s
+         >> test_same=1.000  test_deeper=0.006
+
+=== Stage 3/4: max_depth=3  (threshold reached at step 400) ===
+Data[stage 3/4]: depth_train=3  train=10000  test_same=1000  saved=experiments/20260428_175721/data/20260428_175841
+step   600  loss 0.5745  lr 2.99e-04  110s
+         >> test_same=0.351  test_deeper=0.031
+step   800  loss 0.4053  lr 2.98e-04  150s
+         >> test_same=0.407  test_deeper=0.040
+step  1000  loss 0.2932  lr 2.96e-04  199s
+         >> test_same=0.474  test_deeper=0.045
+step  1200  loss 0.2254  lr 2.93e-04  244s
+         >> test_same=0.512  test_deeper=0.051
+step  1400  loss 0.1897  lr 2.90e-04  286s
+         >> test_same=0.548  test_deeper=0.063
+step  1600  loss 0.1293  lr 2.87e-04  328s
+         >> test_same=0.579  test_deeper=0.053
+step  1800  loss 0.1574  lr 2.83e-04  371s
+         >> test_same=0.566  test_deeper=0.060
+step  2000  loss 0.1180  lr 2.78e-04  413s
+         >> test_same=0.606  test_deeper=0.071
+step  2200  loss 0.1357  lr 2.73e-04  456s
+         >> test_same=0.630  test_deeper=0.062
+step  2400  loss 0.0973  lr 2.68e-04  499s
+         >> test_same=0.645  test_deeper=0.058
+step  2600  loss 0.0894  lr 2.62e-04  542s
+         >> test_same=0.708  test_deeper=0.066
+step  2800  loss 0.0877  lr 2.56e-04  585s
+         >> test_same=0.720  test_deeper=0.068
+step  3000  loss 0.1071  lr 2.49e-04  626s
+         >> test_same=0.709  test_deeper=0.064
+step  3200  loss 0.0699  lr 2.42e-04  669s
+         >> test_same=0.731  test_deeper=0.065
+step  3400  loss 0.0877  lr 2.35e-04  709s
+         >> test_same=0.744  test_deeper=0.063
+step  3600  loss 0.0817  lr 2.27e-04  769s
+         >> test_same=0.745  test_deeper=0.070

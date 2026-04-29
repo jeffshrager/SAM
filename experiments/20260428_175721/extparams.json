@@ -4,6 +4,7 @@
   "n_test": 1000,
   "max_depth_train": 2,
   "max_depth_test": 4,
+  "min_depth_test": 3,
   "seed": 42,
   "max_len": 96,
   "n_layer": 2,
@@ -11,7 +12,7 @@
   "d_model": 128,
   "dropout": 0.1,
   "batch_size": 64,
-  "max_iters": 1000,
+  "max_iters": 10000,
   "lr": 0.0003,
   "warmup_iters": 200,
   "log_every": 200,
@@ -21,7 +22,7 @@
   "expdir": null,
   "patience": 3,
   "min_delta": 0.01,
-  "curriculum": false,
+  "curriculum": true,
   "stages": "1,2,3,4",
   "stage_threshold": 0.99
 }

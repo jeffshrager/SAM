@@ -15,6 +15,7 @@ Usage:
 import argparse
 import json
 import math
+import random
 import time
 from datetime import datetime
 from pathlib import Path
@@ -582,6 +583,7 @@ def train(args):
             n_train=args.n_train, n_test=args.n_test,
             max_depth_train=depth,
             max_depth_test=args.max_depth_test,
+            min_depth_test=args.min_depth_test,
             allowed_ops=list(ALL_OPS),
             require_neg=True, seed=args.seed,
         )
@@ -613,6 +615,7 @@ def train(args):
         # depth-generalisation metric is comparable across all curriculum stages.
         deep_cfg = dict(n_train=10, n_test=args.n_test,
                         max_depth_train=stages[-1], max_depth_test=args.max_depth_test,
+                        min_depth_test=args.min_depth_test,
                         allowed_ops=list(ALL_OPS), require_neg=True, seed=args.seed + 1)
         deep_data        = make_dataset(**deep_cfg)
         # Save this fixed deeper dataset into expdir like all other generated data.
@@ -685,6 +688,12 @@ def train(args):
         return 0.1 + 0.9 * 0.5 * (1.0 + math.cos(math.pi * t))
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+    # Shuffle deep_pairs once so collect_correct_deep sees a random ordering
+    # rather than always finding the easiest examples first.  We use a seeded
+    # shuffle so the ordering is reproducible across runs with the same seed.
+    rng_display = random.Random(args.seed)
+    rng_display.shuffle(deep_pairs)
 
     # ── Initialise progress-tracking output files ────────────────────────────
     # metrics.csv: one row per evaluation checkpoint, written throughout the run.
@@ -862,6 +871,8 @@ def parse_args():
     p.add_argument('--n_test',          type=int,   default=1_000)
     p.add_argument('--max_depth_train', type=int,   default=2)
     p.add_argument('--max_depth_test',  type=int,   default=4)
+    p.add_argument('--min_depth_test',  type=int,   default=3,
+                   help='minimum expression depth in test_deeper (ensures genuinely deep examples)')
     p.add_argument('--seed',            type=int,   default=42)
     # model
     p.add_argument('--max_len',         type=int,   default=96)

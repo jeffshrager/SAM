@@ -1,0 +1,110 @@
+Session Summary — 2026-04-28 (Session 2)
+=========================================
+
+Project: nanoalgebra (SAM repo)
+
+--- What existed at session start ---
+
+  train.py and data_gen.py fully working from session 1.
+  Baseline results established: 2L 4H d128 curriculum run reached test_deeper=0.264.
+  Greedy decode display bug noted (no EOS signal; model looped after answer).
+
+--- What happened this session ---
+
+  1. Deep commenting pass (both files)
+     Added thorough block and inline comments throughout data_gen.py and train.py.
+     Special attention to tensor reshape/reslice operations: every .view(),
+     .transpose(), .split(), and mask construction is annotated with shape at
+     each step and (where non-obvious) a proof that sizes add up correctly.
+     User requested this style globally; saved to ~/.claude/memory/ so it
+     applies to all future projects.
+
+  2. Experiment directory (expdir) infrastructure
+     All inputs and outputs for a run now live in a single timestamped directory
+     under experiments/.  Key changes:
+       - --expdir arg: user can pre-create a directory (to pre-place inputs) or
+         omit it (auto-created as experiments/YYYYMMDD_HHMMSS/).
+       - extparams.json: written immediately on startup; exact CLI args, nothing derived.
+       - intparams.json: written at end of run; device, tag, n_params, data_dirs
+         (list of generated dataset paths), final accuracies, run_status.
+       - run.log: moved from experiments/<tag>.txt into expdir/run.log.
+       - Generated datasets now saved under expdir/data/ rather than top-level data/.
+       - Existing results in experiments/ left untouched.
+
+  3. Progress-tracking output files
+     Two new files written into expdir at each eval checkpoint:
+       - metrics.csv: one row per eval (step, loss, acc_same, acc_deeper).
+         Created fresh at run start; append mode during run; easy to plot.
+       - deep_samples.txt: append mode; each eval block has a header line
+         (step, loss, accs, count) followed by up to --rndc (default 100)
+         correct deep examples.  Designed for `tail -f`.
+     New helper: collect_correct_deep(model, pairs, device, n) — greedily
+     decodes from raw string pairs and returns up to n correct examples.
+     New CLI arg: --rndc (default 100).
+
+  4. EOS / stop-generation fix
+     Problem: model never learned to stop generating; greedy_decode produced
+     garbage after the correct answer (e.g. '-5+5-5-5' instead of '-5').
+     Root cause: PAD positions were fully masked out of the loss, so the model
+     got no gradient signal to predict PAD as end-of-sequence.
+     Fix (two parts):
+       a. AlgebraDataset mask: unmask the first PAD position after the answer
+          (mask=1 there) so the model is trained to predict PAD_ID immediately
+          after the last answer character.  Handles pad==0 edge case gracefully.
+       b. NanoGPT.forward: removed ignore_index=PAD_ID from cross_entropy.
+          This was silently zeroing out the EOS position's loss (because its
+          target IS PAD_ID) while still counting it in mask.sum(), diluting the
+          answer-token loss.  The mask now handles all position filtering.
+       c. collect_correct_deep: truncates prediction to len(tgt) before
+          comparing, as a belt-and-suspenders guard during early training.
+     Result: all sample predictions now show as OK and stop cleanly.
+
+  5. Deeper test set quality fix
+     Problem: test_deeper (depth<=4) contained many shallow examples; model was
+     only getting those right, inflating the deeper accuracy metric.
+     Fix:
+       - Added min_depth parameter to _sample_split() in data_gen.py.
+       - Added min_depth_test to make_dataset() (default 0, backward-compatible).
+       - Added --min_depth_test CLI arg (default 3) so test_deeper contains
+         only depth 3-4 expressions.
+     Result: test_deeper accuracy dropped from ~17% to ~0.7%, which is the
+     honest number — genuinely hard expressions the model hasn't seen.
+
+  6. deep_samples display fix
+     Problem: collect_correct_deep iterated in dataset order, always finding
+     the easiest examples first.
+     Fix: shuffle deep_pairs once (seeded by args.seed) before the training loop
+     so each eval shows a representative random cross-section of what the model
+     can handle.
+
+  7. Environment setup
+     torch installed into the 'test' conda env
+     (/Users/jeffshrager/opt/anaconda3/envs/test/).
+     numpy downgraded to 1.26.4 to match torch 2.2.2's compiled ABI.
+
+--- State at session end ---
+
+  Curriculum run (--curriculum --max_iters 10000) in progress in background.
+  Expected: stages depth 1->2->3->4, fixed test_deeper with min_depth=3.
+  This is the first run with all the new infrastructure in place.
+
+--- Key decisions / design notes ---
+
+  PAD-as-EOS: chose to reuse PAD_ID as the end-of-sequence signal rather than
+  adding a dedicated EOS token.  Avoids vocab changes; semantically fine for
+  this model since PAD and EOS are the same concept (nothing follows).
+  The ignore_index pitfall: cross_entropy's ignore_index silently zeros loss at
+  positions where target==ignore_index, which conflicts with using PAD as EOS.
+  Solution: drop ignore_index entirely and let the loss mask be the sole filter.
+
+  min_depth_test=3 default: test_deeper now always means "depth 3 or 4."
+  The ~50x attempt limit was raised to 200x for this case since min_depth
+  constraints are tighter than require_neg alone.
+
+--- Files changed this session ---
+
+  data_gen.py   — deep comments; min_depth in _sample_split and make_dataset
+  train.py      — deep comments; expdir/extparams/intparams infrastructure;
+                  metrics.csv; deep_samples.txt; collect_correct_deep;
+                  EOS fix (mask + no ignore_index); min_depth_test arg;
+                  shuffle of deep_pairs; --rndc arg; torch import added

@@ -211,7 +211,7 @@ def decode(ids: list[int]) -> str:
 # Utilities to generate and organise train/test splits.
 
 def _sample_split(n: int, max_depth: int, allowed_ops, require_neg: bool,
-                  rng: random.Random) -> list[str]:
+                  rng: random.Random, min_depth: int = 0) -> list[str]:
     """
     Sample exactly n expression pairs satisfying the given constraints.
 
@@ -219,19 +219,26 @@ def _sample_split(n: int, max_depth: int, allowed_ops, require_neg: bool,
     because those would be trivial identity rewrites and would skew the
     difficulty distribution of the dataset.
 
+    min_depth (default 0 = no lower bound) rejects expressions whose tree
+    height is below the threshold.  Set min_depth=3 for the deeper test split
+    so every example is genuinely challenging and not just a repeat of the
+    shallow training distribution.
+
     A hard upper bound on attempts prevents infinite loops when the constraints
     are very tight (e.g. require_neg=True at depth 0).
     """
     samples, attempts = [], 0
     while len(samples) < n:
         attempts += 1
-        if attempts > n * 50:
+        if attempts > n * 200:
             raise RuntimeError(
-                f"Could not generate {n} samples with require_neg={require_neg}; "
-                "try a higher max_depth or set require_neg=False"
+                f"Could not generate {n} samples with require_neg={require_neg}, "
+                f"min_depth={min_depth}; try relaxing constraints"
             )
         expr = sample_expr(max_depth, allowed_ops, rng)
         if require_neg and not has_neg(expr):
+            continue
+        if min_depth > 0 and depth(expr) < min_depth:
             continue
         samples.append(make_pair(expr))
     return samples
@@ -242,6 +249,7 @@ def make_dataset(
     n_test: int = 1_000,
     max_depth_train: int = 2,
     max_depth_test: int = 4,
+    min_depth_test: int = 0,
     allowed_ops: tuple = ALL_OPS,
     require_neg: bool = True,
     seed: int = 42,
@@ -254,7 +262,9 @@ def make_dataset(
     Splits returned:
       train        — depth <= max_depth_train, for training
       test_same    — same depth as train, fresh samples (catches memorization)
-      test_deeper  — depth <= max_depth_test  (depth generalization probe)
+      test_deeper  — min_depth_test <= depth <= max_depth_test
+                     (depth generalization probe; default min=0 gives depth<=4,
+                      set min_depth_test=3 to guarantee genuinely deep examples)
 
     Using a single rng that is advanced in order (train, then test_same, then
     test_deeper) means the three splits will differ even if their parameters
@@ -264,7 +274,8 @@ def make_dataset(
     return {
         'train':       _sample_split(n_train, max_depth_train, allowed_ops, require_neg, rng),
         'test_same':   _sample_split(n_test,  max_depth_train, allowed_ops, require_neg, rng),
-        'test_deeper': _sample_split(n_test,  max_depth_test,  allowed_ops, require_neg, rng),
+        'test_deeper': _sample_split(n_test,  max_depth_test,  allowed_ops, require_neg, rng,
+                                     min_depth=min_depth_test),
     }
 
 
