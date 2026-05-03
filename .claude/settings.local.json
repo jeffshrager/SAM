@@ -7,7 +7,11 @@
       "Read(//Users/jeffshrager/.claude/**)",
       "Bash(conda info *)",
       "Read(//Users/jeffshrager/**)",
-      "Bash(/Users/jeffshrager/opt/anaconda3/envs/test/bin/python *)"
+      "Bash(/Users/jeffshrager/opt/anaconda3/envs/test/bin/python *)",
+      "Bash(python *)",
+      "Bash(pip3 show *)",
+      "Bash(pip show *)",
+      "Bash(conda run *)"
     ]
   }
 }

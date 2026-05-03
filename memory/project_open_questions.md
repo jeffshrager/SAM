@@ -1,6 +1,6 @@
 ---
 name: SAM open experimental questions
-description: Deferred experiments and open questions from session 2, to pick up next session
+description: Deferred experiments and open questions, updated through 2026-05-03 discussion
 type: project
 ---
 
@@ -13,31 +13,63 @@ cut the non-curriculum run short, or both.
 
 **How to apply:** Before starting new runs, check which of these is addressed first.
 
-Recommended cleanup — do before next experiments (needs team sign-off on symbol choice):
+---
 
-0. Replace `->` separator with a single token (TN-005)
-   `->` is two tokens (`-` and `>`), both with other meanings in expressions.
-   Replace with one unambiguous character (e.g. `|` or `~`).
-   Change: VOCAB and make_pair() in data_gen.py, SEP_ID in train.py, regenerate data.
-   Low cost, high clarity. Do this before implementing TN-003 (= experiment).
+## Research scope clarification (2026-05-02 discussion)
 
-Pending team discussion (do not implement unilaterally):
+Jeff's stated goals, to avoid scope drift:
+- NOT modeling real human algebra development or cognitively plausible sequences.
+- "Developmental sequence" means ordered curriculum (easy→hard), not a human-like progression.
+- Training from scratch only — no pretrained NLP models (confound: can't attribute
+  generalization to curriculum if prior knowledge is baked in).
+- Roussel's NLP-pretrained LLM suggestion (Deepseek, Qwen) is ruled out.
+- Roussel's formal-system pre-training variant (pre-train on broad algebraic instances,
+  then fine-tune on the specific task) is NOT ruled out and may be worth a future run.
+- Neutral symbolic tags for rule applications (e.g. `a`, `b` not `distribute`) are
+  of interest: do they help the model form abstractions faster?
+
+---
+
+## Symbol / vocab change: `->` replaced with `_` (2026-05-03, DONE)
+
+`->` was two tokens (`-` and `>`), making the separator ambiguous to read even if
+technically unambiguous (since `>` never appeared elsewhere). Replaced with single
+char `_`. VOCAB now has `_` instead of `>` at the same index 14. All saved datasets
+generated before this change are incompatible — regenerate data on next run.
+
+Note: TN-003 (equivalence experiment) originally proposed using `_` as the blank
+placeholder. That design must change; a different char (e.g. `?`) is needed for the
+blank now that `_` is the separator.
+
+---
+
+## Pending team discussion (do not implement unilaterally)
 
 A. Equivalence understanding experiment (TN-003)
-   Add `=` and `_` to vocab; train on relational forms like `3+4+1 = 3+_ -> 5`;
-   test whether model replicates children's operational misreading of `=`.
-   Low-hanging fruit, testable with existing infrastructure.
+   Train on relational forms like `3+4+1 = 3+? -> 5` (use `?` not `_` for blank,
+   since `_` is now the separator); test whether model replicates children's
+   operational misreading of `=` (treats `=` as `->` rather than as a relation).
+   Requires adding `=` and `?` to vocab.
 
-B. Arithmetic evaluation (TN-004)
+B. Rule-label ablation (from Jeff, 2026-05-02)
+   Attach neutral symbolic tags to training examples marking which rule is being
+   applied (e.g. `a` for "distribute neg over parens", `b` for "double-neg cancel").
+   Hypothesis: labeling an abstraction consistently accelerates or enables its
+   formation, even when the tag itself carries no semantic content to the model.
+   Requires new data format and careful control condition (same data without tags).
+
+C. Arithmetic evaluation (TN-004)
    Add actual computation to training targets (e.g. `3+2 -> 5`).
    Opens the door to the number line hypothesis — does purely symbolic
    training produce magnitude-like internal representations?
 
-C. Training data realism (TN-002)
+D. Training data realism (TN-002)
    Make expression frequency distribution match human exposure: mostly
    2-3 terms, repetition, variation in numbers not syntactic depth.
 
-Deferred experiments in priority order:
+---
+
+## Deferred experiments in priority order
 
 1. Non-curriculum depth<=4 with --patience 0
    Fair baseline: let it run 10000 steps uninterrupted.

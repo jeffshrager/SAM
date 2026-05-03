@@ -1,0 +1,154 @@
+Session Summary — 2026-05-03 (Session 3)
+=========================================
+
+Project: nanoalgebra (SAM repo)
+
+--- What existed at session start ---
+
+  train.py and data_gen.py fully working from session 2.
+  Best results: curriculum (1->2->3->4) test_deeper=0.224, test_same=0.350.
+  Non-curriculum depth-4 baseline cut short by early stopping at step 2000.
+  Discussions/ directory added; 20260429 discussion already present.
+
+--- What happened this session ---
+
+  1. Reviewed new team discussion: Discussions/20260502_Discussion.txt
+     David, Jeff, and Roussel debated three topics:
+
+     a. Equivalence understanding (David)
+        David raised the children's-algebra-error literature: kids given
+        "3+4+1 = 3+_" often answer 8 or 11 (treating = as "compute left side")
+        rather than 5 (treating = as a relation). He suggests the model may
+        exhibit the same bug if trained without relational-equals examples.
+        This is now queued as TN-003 (see below), with the blank char changed
+        from `_` to `?` since `_` is now used as the separator.
+
+     b. Research scope clarification (Jeff)
+        Jeff clarified what the project is and is not:
+        - NOT modeling real algebra development or human-plausible sequences.
+        - "Developmental sequence" = ordered curriculum (easy->hard) only.
+        - Goal: observe whether training order affects abstraction formation
+          in a formal system, and find generalizations in the GPT stack.
+        - Training from scratch; no pretrained NLP models (confound: can't
+          attribute generalization to curriculum if prior knowledge present).
+        - Neutral symbolic tags (e.g. `a`, `b`) labeling rule applications
+          are of interest: do they accelerate abstraction formation even though
+          the tags carry no semantic content to the model?
+
+     c. Pre-training vs. from-scratch (Roussel)
+        Roussel proposed two things, which are actually distinct:
+          1. Use NLP-pretrained LLMs (Deepseek, Qwen) as a starting point.
+             Jeff ruled this out: prior knowledge is an uncontrolled confound.
+          2. Pre-train within the formal system on broad algebraic instances,
+             then fine-tune on the specific task.
+             Jeff did not explicitly address this; it is NOT ruled out and
+             remains open as a future experiment.
+
+  2. Updated memory (project_open_questions.md)
+     Added research-scope summary, new experiments (TN-003 revised, rule-label
+     ablation), formal-pre-training note, and separator-change record.
+
+  3. Separator change: `->` replaced with `_`  (TN-005, now DONE)
+     The `->` separator was two characters; `-` also appears in expressions and
+     targets, making it visually ambiguous. `>` appeared only in `->`, so it was
+     technically unambiguous, but still inelegant.
+     Replacement: single char `_`, which never appears in expressions or targets.
+     Changes made:
+       data_gen.py:
+         - VOCAB: replaced `>` with `_`  (still 15 chars; same VOCAB_SIZE)
+         - Docstring: updated format description
+         - make_pair(): `expr_to_str(expr) + '->' + rewrite(expr)`
+                     -> `expr_to_str(expr) + '_' + rewrite(expr)`
+         - Smoke test split: `s.split('->')[1]` -> `s.split('_')[1]`
+       train.py:
+         - SEP_ID: `_C2I['>']` -> `_C2I['_']`
+         - AlgebraDataset docstring example updated
+         - collect_correct_deep: `raw.split('->')` -> `raw.split('_', 1)`
+                                  `encode(src + '->')` -> `encode(src + '_')`
+         - train() sample predictions: same two changes as above
+         - Module docstring updated
+     Note: all datasets generated before this change are incompatible.
+     Note: TN-003 originally used `_` as the blank char in relational-equals
+     training examples. That design must now use a different char (e.g. `?`).
+
+  4. Smoke test: python3 data_gen.py — all checks passed.
+     Vocab confirmed as: ()+-0123456789_  (15 chars)
+     Sample outputs confirmed in new format, e.g.: "-(3+4)_-3-4"
+
+  5. Training run (curriculum, 5000 iters, test conda env)
+     Command: conda run -n test python3 train.py --curriculum --max_iters 5000
+     Expdir:  experiments/20260503_145328/
+     Results:
+       Stage 1 (depth<=1): mastered at step 200   (test_same=1.000, test_deeper=0.004)
+       Stage 2 (depth<=2): mastered at step 400   (test_same=1.000, test_deeper=0.014)
+       Stage 3 (depth<=3): climbed to 0.808 then stalled; advanced to Stage 4 at step 4000
+       Stage 4 (depth<=4): only ~1000 steps remaining; test_same=0.263, test_deeper=0.115
+       Final: test_same=0.263  test_deeper=0.115  (full-run, 5000 iters)
+
+     These numbers are weaker than session 2's curriculum run (test_same=0.350,
+     test_deeper=0.224). Two causes:
+       a. Stage 3 ate ~3400 steps without reaching threshold, leaving only
+          ~1000 steps for Stage 4.
+       b. The global cosine LR schedule (computed over all 5000 steps) had
+          decayed to ~3e-5 by the time Stage 4 began — the model was barely
+          able to update on genuinely new hard examples.
+     The run confirmed the separator change is correct; no errors, output format
+     is clean (e.g. "((2+((2-6)--3))+...)_...").
+
+  6. LR reset discussion
+     Raised: should the LR schedule reset at each curriculum stage transition?
+     Tradeoff:
+       Loss: theoretically, a high LR after a stage transition could destabilize
+       representations learned in prior stages. In practice this risk is low
+       because later stages contain the same shallow sub-expressions, so depth-2
+       representations are reinforced, not overwritten.
+       Gain: avoids training Stage 4 under a near-dead LR. The model sees
+       genuinely novel hard examples for the first time and needs real gradient
+       signal to make progress.
+     Recommended design: per-stage cosine schedule with a short warmup, resetting
+     at each stage transition. Requires deciding per-stage budget (explicitly or
+     tied to stage duration). Not implemented yet; deferred to next session.
+
+--- State at session end ---
+
+  Separator change committed; smoke test and training run both clean.
+  No other code changes.
+
+--- Open experiments (updated priority order) ---
+
+  0. Per-stage LR schedule (discussed, not yet implemented)
+     Reset the cosine schedule at each curriculum stage transition so late stages
+     don't train under a near-dead LR. Needs a per-stage budget parameter.
+
+  1. Non-curriculum depth<=4 with --patience 0  (still pending from session 2)
+     Fair baseline: let it train the full 10000 steps uninterrupted.
+     Command: conda run -n test python3 train.py \
+       --max_depth_train 4 --max_iters 10000 --patience 0
+
+  2. Network depth sweep with curriculum
+     --n_layer in {2, 4, 6} with --curriculum --max_iters 10000.
+     ~30 min per run on CPU.
+
+  3. Longer curriculum training
+     --max_iters 20000 (or per-stage LR first, then revisit).
+
+  4. Pending team discussion before implementation:
+     A. Equivalence understanding / relational equals (TN-003)
+        Use `?` (not `_`) as blank in forms like "3+4+1 = 3+? -> 5".
+        Requires adding `=` and `?` to vocab.
+     B. Rule-label ablation
+        Neutral tags (e.g. `a`, `b`) marking which rule is applied per step.
+        Test whether consistent labeling accelerates abstraction formation.
+     C. Formal-system pre-training
+        Pre-train on broad algebraic instances, fine-tune on the specific task.
+        Still open; distinct from the ruled-out NLP-pretrained LLM branch.
+
+  5. Mechanistic probes (deferred until test_deeper > 50%)
+
+--- Files changed this session ---
+
+  data_gen.py           — separator `->` -> `_`; VOCAB `>` -> `_`; docstrings
+  train.py              — SEP_ID; separator in split/encode calls; docstrings
+  memory/project_open_questions.md — scope clarifications, new experiments,
+                                      separator-change record, LR note
+  seshsums/20260503_session3.txt   — this file

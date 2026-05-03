@@ -1,0 +1,135 @@
+========================================
+David writes: 
+
+"A standard task in the equivalence understanding literature is asking
+children to answer questions like "3+4+1 = 3+_"? Where children often
+say "8" or "11" instead of 5". I guess we could test this by
+presenting trials like "3+4+1 = 3+__ ->". I think it's very likely
+that Claude would respond "8" or "11". In fact it is hard to see how
+it would ever respond "5"."
+
+========================================
+Jeff writes:
+
+I'm not sure why you say this. Clearly (well, by assumption clearly)
+it will have learned that 4+1->5 (the current model isn't actually
+doing the arithmetic, but we know what we're talking about) and so
+it's not at all unreasonable to expect that it might learn the
+trajectory you've described. In fact, this is sort of the point of the
+whole exercise -- or one of the points --being that that precise
+transformation -- reducing 4+1 -> 5 ... or, in the current model,
+since it's not actually doing arithmetic, more like reducing, say
+"-(--9)" to "(--9)" to "(+9)" to "+9" to "9" is what we're hoping to
+get. (Which actually leads me to realize that there's actually no
+reason it shouldn't be just doing the arithmetic, since that's pretty
+much just a symbol manipulation game as well.
+
+Before you jump on arithmetic just being a symbol manipulation game
+... I realize that it's not! My point ... and again, actually one of
+the central points of this experiment is to explore the claim that if
+you teach a deep gpt (an llm, if you like) math purely as a symbol
+manilauon game, it will learn internal representations that are
+representing "higher order concepts" (whatever that means), that, for
+example, deep in the network someplace there will be the functional
+equivalent of a number line.
+
+Now, of course, you could just GIVE IT a number line, and teach
+numbers as being in places along it, but that would have to be taught,
+and represented someplace in the model somehow as well, and would,
+hopefully, give models "taught" in that way a leg up over ones that
+either infer the number line, or nver infer anything like a number
+line and merely always are playing a simple symbol pushing game.
+
+========================================
+David writes:
+
+My point was not that the model would not learn 3 + 1 = 4. Instead, my
+point was that the model, like children, might not understand the
+significance of the equal sign when operations appear on both sides of
+it, if it has not been trained on that pattern. It might well
+interpret the equal sign to mean the same thing in that context as
+what it means in the more usual context, when operations only appear
+on one side of it. In the latter context the meaning of the equal sign
+is just to compute. In other words, the same meaning that is normally
+attributed to the arrow sign. That is the usual misunderstanding that
+occurs among children, and I think it possibly might appear in our
+model as well. If that is so, then great - it is realistically
+simulating children's development, even though the response would be
+mathematically incorrect.
+
+========================================
+Roussel writes:
+
+1. The autoregressive nature of LLMs/transformer pre-training for
+generation + supervised finetuning. GPT like models are pretrained on
+sequences of symbols, in order to generate by next symbol, before they
+are finetuned.
+
+Perhaps we can have both steps?: (1) pre-training and (2) fine-tuning.
+
+We can pre-train SAM on many general instances like "3 + (1+4) = 3 + 5
+= 8" and then, fine-tune them again with labeled examples. Not clear
+yet how we may represent our training data. But we can investigate
+what they learn and how good they become at each step. If we increase
+our number and operators pool to ensure that there will still be
+combinations of numbers and operators as instances that our model has
+not been trained on explicitly.
+
+2. Right now, I think we are training/teaching our models from
+scratch. To me, it seems we are in part investigating the models
+ability to learn symbols and operations using its transformer based
+abilities ot predicting the next symbol in sequences. Please correct
+me if off-track, I think, to our model, an operator would be just
+another symbol in the sequence to learn and predict.
+
+Clearly, predicting the next symbol is not the only way how humans
+learn. But, to keep things light and unambiguous + to give the
+model(s) the best shot, perhaps we can start with strict, regular
+strings for training and inference?
+
+3. We have many open-source pre-trained LLMs that we could use as a
+starting point of our own training, such as Deepseek or Qwen
+models. In my experience, they are not very math-savvy just based on
+pre-training and unless they are fine-tuned specifically for math
+(like deepseek-math or Qwen math). Would not be too difficult or
+time-consuming to test them on the problems. We can decide about
+fine-tuning based on what we see.
+
+========================================
+Jeff writes:
+
+I should be clear that I'm not (at least at this points) trying to
+model that actual learning of algebra. Algebra here is just a
+convenient system that we know has abstract rules that can potentially
+be learned, and which we can try to find in the GPT stack. Similarly,
+by "developmental sequence" I don't mean (at this point) anything like
+the actually developmental sequence (nor even a humanly plausible
+one). Again, the idea is to explore various versions of sequenced
+learning progression  -- as compared with various non-seuqences
+training -- not necessarily one that is plausible for real algebra, or
+even for this particular system.
+
+Regarding using a foundation model as opposed to training from scratch
+-- these would have different research goals, and I am leaning at this
+point to NOT using a model that it pretrained with anything at all,
+esp. not human language. It's almost certainly the case that language
+guidance from tutors and teachers helps kids learn algebra, and,
+again, that is worth exploring, but at this point I am (as above) not
+trying to train REAL algebra, but instead train a complex formal
+system and look for generalizations, and isolate where they come from.
+I did mention and experiment with words, but I didn't mean the same
+words you'd use in algebra -- fir which you'd need a GPT to make sense
+of (for example, instructions such as "when you have a minus sign
+before parens flip the sign of everything in the parens)" -- this
+obviously would be helpful, but would also obviously requires a GPT to
+make sense of. But that's actually a diffrernt question. Instead I'd
+like to know wherther adding consisten symbolic tags to manipulations
+thatcould be abstracted (like negative distribution) enables them to
+be learned better -- for the abstraction to be formed more quickly ...
+or even at all. but I do NOT mean to use those specific terms and
+expect them to mean something, in fact, I would use completely neutral
+terms, like X52 and V25, and not have an LLM(GPT) so that the term
+doesn't carry any exteranal content (even if we did use words like
+"distribute", unless this was going into a GPT they're effectively
+random tags. (There's a little detail about tokens, but working around
+that, maybe use "a" and "b" to, as usual, avoid tokenization issues).

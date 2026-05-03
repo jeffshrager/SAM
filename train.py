@@ -2,7 +2,7 @@
 Minimal decoder-only transformer for the nanoalgebra negation-distribution task.
 
 The model is a small GPT-style (causal / autoregressive) transformer.
-It reads a string like "-(3+4)->" and must predict the remaining characters
+It reads a string like "-(3+4)_" and must predict the remaining characters
 "-3-4" one token at a time.  Loss is only computed on those answer tokens —
 the model is not penalised for how well it predicts the input portion.
 
@@ -54,7 +54,7 @@ class Logger:
 # rows, where the last row is reserved for PAD.
 
 PAD_ID   = VOCAB_SIZE        # index of the padding pseudo-token
-SEP_ID   = _C2I['>']        # index of '>'; marks the start of the answer side
+SEP_ID   = _C2I['_']        # index of '_'; marks the start of the answer side
 EXT_VOCAB = VOCAB_SIZE + 1  # total vocabulary size seen by the model (incl. PAD)
 
 
@@ -75,10 +75,10 @@ class AlgebraDataset(Dataset):
     that should be predicted given x[0..i].  Padding tokens appended after the
     real sequence get mask=0, so they never contribute to the loss.
 
-    Example for max_len=10 and pair "-(3)->-3":
-      ids    = encode("-(3)->-3")       length 8
-      L      = 8,  pad = 10-8 = 2
-      sep    = ids.index(SEP_ID)        index of '>' = 4  (the '>' in '->')
+    Example for max_len=10 and pair "-(3)_-3":
+      ids    = encode("-(3)_-3")        length 7
+      L      = 7,  pad = 10-7 = 3
+      sep    = ids.index(SEP_ID)        index of '_' = 4
       padded = [ids...] + [PAD, PAD]    length 10
       x      = padded[0:9]              length 9 = max_len-1
       y      = padded[1:10]             length 9
@@ -499,8 +499,8 @@ def collect_correct_deep(model, pairs: list[str], device, n: int) -> list[str]:
     for raw in pairs:
         if len(found) >= n:
             break
-        src, tgt = raw.split('->')
-        prompt  = encode(src + '->')
+        src, tgt = raw.split('_', 1)
+        prompt  = encode(src + '_')
         out_ids = greedy_decode(model, prompt, device, max_new=len(tgt) * 2 + 4)
         # out_ids[len(prompt):] are the tokens generated after the prompt.
         # Truncate to len(tgt) before comparing so that any residual tokens
@@ -832,8 +832,8 @@ def train(args):
 
     log("\nSample predictions (greedy):")
     for raw in data['test_same'][:8]:
-        src, tgt = raw.split('->')
-        prompt   = encode(src + '->')          # token ids up to and including '>'
+        src, tgt = raw.split('_', 1)
+        prompt   = encode(src + '_')           # token ids up to and including '_'
         out_ids  = greedy_decode(model, prompt, device, max_new=len(tgt) * 2 + 4)
         # Decode only the newly generated tokens (everything after the prompt).
         out_str  = ''.join(_I2C.get(i, '?') for i in out_ids[len(prompt):])

@@ -5,9 +5,9 @@ dataset splits, and character-level tokenizer.
 Grammar:   Expr := digit | ('neg',Expr) | ('add',Expr,Expr) | ('sub',Expr,Expr)
            digit := 0..9
 
-Training format:  "-(3+4)->-3-4"
-  The model sees the full string; loss is computed on the target side (after '->').
-  '>' appears only in the '->' separator, never in expressions or targets.
+Training format:  "-(3+4)_-3-4"
+  The model sees the full string; loss is computed on the target side (after '_').
+  '_' appears only as the separator, never in expressions or targets.
 
 Rewrite task: distribute all negations to the leaves.
   -(a+b)  ->  -a-b
@@ -38,10 +38,10 @@ Expr = Union[int, tuple]
 DIGITS = list(range(10))           # valid leaf values: 0-9
 ALL_OPS = ('neg', 'add', 'sub')    # complete operator set
 
-# The full character vocabulary.  '>' only ever appears as part of the '->'
-# separator, so every other character belongs to either an expression or target.
+# The full character vocabulary.  '_' is the separator between input and target;
+# it never appears inside an expression or a target string.
 # Using sorted() here makes the mapping deterministic across Python runs.
-VOCAB = sorted('0123456789()+->')
+VOCAB = sorted('0123456789()+-_')
 VOCAB_SIZE = len(VOCAB)
 _C2I = {c: i for i, c in enumerate(VOCAB)}   # char -> integer id
 _I2C = {i: c for i, c in enumerate(VOCAB)}   # integer id -> char
@@ -193,8 +193,8 @@ def rewrite(expr: Expr) -> str:
 # A "pair" is the complete training string: "input->target".
 
 def make_pair(expr: Expr) -> str:
-    """Build a single 'input->target' training string from an expression tree."""
-    return expr_to_str(expr) + '->' + rewrite(expr)
+    """Build a single 'input_target' training string from an expression tree."""
+    return expr_to_str(expr) + '_' + rewrite(expr)
 
 
 def encode(s: str) -> list[int]:
@@ -363,7 +363,7 @@ if __name__ == '__main__':
 
     # Verify no multi-digit numbers in targets
     for s in all_strings:
-        target = s.split('->')[1]
+        target = s.split('_')[1]
         assert all(len(r) == 1 for r in re.findall(r'\d+', target)), \
             f"Multi-digit in target: {s}"
     print('Single-digit check passed.')
